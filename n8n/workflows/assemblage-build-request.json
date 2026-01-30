@@ -1,0 +1,485 @@
+{
+  "name": "Assemblage Build Request",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-node",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "repo_url",
+              "name": "repo_url",
+              "value": "https://github.com/example/project",
+              "type": "string"
+            },
+            {
+              "id": "commit_ref",
+              "name": "commit_ref",
+              "value": "main",
+              "type": "string"
+            },
+            {
+              "id": "compiler",
+              "name": "compiler",
+              "value": "gcc",
+              "type": "string"
+            },
+            {
+              "id": "optimizations",
+              "name": "optimizations",
+              "value": "=[\"opt_NONE\", \"opt_MEDIUM\"]",
+              "type": "array"
+            }
+          ]
+        }
+      },
+      "id": "set-params",
+      "name": "Set Build Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://assemblage-bridge:8090/build",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"repo_url\": \"{{ $json.repo_url }}\",\n  \"commit_ref\": \"{{ $json.commit_ref }}\",\n  \"recipe\": {\n    \"compiler\": \"{{ $json.compiler }}\",\n    \"platform\": \"linux\",\n    \"architecture\": \"x64\",\n    \"optimizations\": {{ $json.optimizations }},\n    \"build_system\": \"cmake\"\n  }\n}",
+        "options": {}
+      },
+      "id": "submit-build",
+      "name": "Submit Build",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "job_id",
+              "name": "job_id",
+              "value": "={{ $json.job_id }}",
+              "type": "string"
+            },
+            {
+              "id": "poll_count",
+              "name": "poll_count",
+              "value": "=0",
+              "type": "number"
+            },
+            {
+              "id": "max_polls",
+              "name": "max_polls",
+              "value": "=60",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "id": "init-poll",
+      "name": "Init Poll State",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://assemblage-bridge:8090/build/{{ $json.job_id }}",
+        "options": {}
+      },
+      "id": "poll-status",
+      "name": "Poll Job Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "terminal-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "failed-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "FAILED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "timeout-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "TIMEOUT",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-complete",
+      "name": "Build Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "wait-node",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1540, 420]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "poll_count",
+              "name": "poll_count",
+              "value": "={{ $('Init Poll State').item.json.poll_count + 1 }}",
+              "type": "number"
+            },
+            {
+              "id": "job_id",
+              "name": "job_id",
+              "value": "={{ $('Init Poll State').item.json.job_id }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "increment-poll",
+      "name": "Increment Poll Count",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1760, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "max-polls-check",
+              "leftValue": "={{ $json.poll_count }}",
+              "rightValue": "={{ $('Init Poll State').item.json.max_polls }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-max-polls",
+      "name": "Under Max Polls?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1980, 420]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "job_id",
+              "name": "job_id",
+              "value": "={{ $('Poll Job Status').item.json.job_id }}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "={{ $('Poll Job Status').item.json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "recipe_hash",
+              "name": "recipe_hash",
+              "value": "={{ $('Poll Job Status').item.json.recipe_hash }}",
+              "type": "string"
+            },
+            {
+              "id": "artifact_count",
+              "name": "artifact_count",
+              "value": "={{ $('Poll Job Status').item.json.artifact_count }}",
+              "type": "number"
+            },
+            {
+              "id": "artifacts",
+              "name": "artifacts",
+              "value": "={{ $('Poll Job Status').item.json.artifacts }}",
+              "type": "array"
+            },
+            {
+              "id": "error_message",
+              "name": "error_message",
+              "value": "={{ $('Poll Job Status').item.json.error_message }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "extract-results",
+      "name": "Extract Results",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1540, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-success",
+      "name": "Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1760, 180]
+    },
+    {
+      "parameters": {},
+      "id": "success-output",
+      "name": "Build Succeeded",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1980, 60],
+      "notesInFlow": true,
+      "notes": "Artifacts available at:\n$json.artifacts[].local_path"
+    },
+    {
+      "parameters": {},
+      "id": "failure-output",
+      "name": "Build Failed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1980, 300],
+      "notesInFlow": true,
+      "notes": "Error: $json.error_message"
+    },
+    {
+      "parameters": {
+        "errorMessage": "=Build polling exceeded maximum attempts ({{ $('Init Poll State').item.json.max_polls }})"
+      },
+      "id": "timeout-error",
+      "name": "Polling Timeout",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [2200, 540]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Build Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Build Parameters": {
+      "main": [
+        [
+          {
+            "node": "Submit Build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Build": {
+      "main": [
+        [
+          {
+            "node": "Init Poll State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Poll State": {
+      "main": [
+        [
+          {
+            "node": "Poll Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Job Status": {
+      "main": [
+        [
+          {
+            "node": "Build Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Complete?": {
+      "main": [
+        [
+          {
+            "node": "Extract Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 30s": {
+      "main": [
+        [
+          {
+            "node": "Increment Poll Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Poll Count": {
+      "main": [
+        [
+          {
+            "node": "Under Max Polls?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Under Max Polls?": {
+      "main": [
+        [
+          {
+            "node": "Poll Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Polling Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Results": {
+      "main": [
+        [
+          {
+            "node": "Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success?": {
+      "main": [
+        [
+          {
+            "node": "Build Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [
+    {
+      "name": "assemblage",
+      "id": "1"
+    },
+    {
+      "name": "build",
+      "id": "2"
+    }
+  ]
+}

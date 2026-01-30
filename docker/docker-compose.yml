@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # n8n Orchestration Engine
+  # =============================================================================
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: reforge-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      # Database Configuration
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_SCHEMA=public
+      # n8n Configuration
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_RUNNERS_ENABLED=true
+      - GENERIC_TIMEZONE=${TIMEZONE:-Europe/Berlin}
+      - TZ=${TIMEZONE:-Europe/Berlin}
+      # Security - Allow command execution for Ghidra integration
+      - N8N_SECURITY_AUDIT_LOGS_ENABLED=true
+      # Binary data handling for large decompilation outputs
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - N8N_BINARY_DATA_STORAGE_PATH=/files/binary_data
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./local-files:/files
+      - ../workers:/workers:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - reforge-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # PostgreSQL - Provenance & State Management
+  # =============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: reforge-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../db/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ../db/postgres/provenance.sql:/docker-entrypoint-initdb.d/02-provenance.sql:ro
+    networks:
+      - reforge-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # Redis - Worker Queue Management
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: reforge-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - reforge-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # Assemblage Bridge - HTTP API for Assemblage Integration
+  # =============================================================================
+  assemblage-bridge:
+    build:
+      context: ../workers/assemblage_bridge
+      dockerfile: Dockerfile
+    container_name: reforge-assemblage-bridge
+    restart: unless-stopped
+    ports:
+      - "${ASSEMBLAGE_BRIDGE_PORT:-8090}:8090"
+    environment:
+      # Assemblage Database (external Assemblage stack)
+      - ASSEMBLAGE_DB_HOST=${ASSEMBLAGE_DB_HOST:-assemblage-db}
+      - ASSEMBLAGE_DB_PORT=${ASSEMBLAGE_DB_PORT:-5432}
+      - ASSEMBLAGE_DB_NAME=${ASSEMBLAGE_DB_NAME:-assemblage}
+      - ASSEMBLAGE_DB_USER=${ASSEMBLAGE_DB_USER:-assemblage}
+      - ASSEMBLAGE_DB_PASSWORD=${ASSEMBLAGE_DB_PASSWORD:-assemblage_pw}
+      # Assemblage MinIO/S3 (external Assemblage stack)
+      - ASSEMBLAGE_S3_ENDPOINT=${ASSEMBLAGE_S3_ENDPOINT:-http://minio:9000}
+      - ASSEMBLAGE_S3_ACCESS_KEY=${ASSEMBLAGE_S3_ACCESS_KEY:-minioadmin}
+      - ASSEMBLAGE_S3_SECRET_KEY=${ASSEMBLAGE_S3_SECRET_KEY:-minioadmin}
+      - ASSEMBLAGE_S3_BUCKET=${ASSEMBLAGE_S3_BUCKET:-artifacts}
+      - ASSEMBLAGE_S3_REGION=${ASSEMBLAGE_S3_REGION:-us-east-1}
+      # Bridge settings
+      - ASSEMBLAGE_BRIDGE_PORT=8090
+      - ASSEMBLAGE_LOCAL_OUT_DIR=/files/binaries
+      - ASSEMBLAGE_DB_PATH=/files/assemblage_bridge/jobs.db
+      - ASSEMBLAGE_DEFAULT_DATASET=${ASSEMBLAGE_DEFAULT_DATASET:-Reforge}
+      # Security (optional)
+      - ASSEMBLAGE_BRIDGE_API_KEY=${ASSEMBLAGE_BRIDGE_API_KEY:-}
+      - ASSEMBLAGE_BRIDGE_REQUIRE_API_KEY=${ASSEMBLAGE_BRIDGE_REQUIRE_API_KEY:-false}
+    volumes:
+      - ./local-files:/files
+    networks:
+      - reforge-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+# =============================================================================
+# Volumes & Networks
+# =============================================================================
+volumes:
+  n8n_data:
+    external: true 
+  postgres_data:
+    name: reforge_postgres_data
+  redis_data:
+    name: reforge_redis_data
+
+networks:
+  reforge-network:
+    name: reforge-network
+    driver: bridge
