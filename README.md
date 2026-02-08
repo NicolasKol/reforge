@@ -1,99 +1,129 @@
 # Reforge
 
-**LLM-Assisted Reverse Engineering Orchestration Framework**
+**Reverse Engineering Pipeline with Modular Architecture**
 
-Reforge is a self-hostable orchestration platform for automated binary decompilation using Large Language Models. It provides reproducible workflows for lifting compiled binaries back to human-readable source code with provenance tracking and iterative validation.
-
-## Key Features
-
-- **Distributed Control Plane**: Docker-based deployment with n8n orchestration, Redis queues, and PostgreSQL provenance tracking
-- **Modular Workflows**: Plug-and-play LLM selection with versioned prompt templates
-- **Iterative Repair**: Compilation feedback loops with ASAN validation for functionally correct output
-- **Experiment Tracking**: Full provenance of every LLM interaction, metric calculation, and artifact storage
-
-## Quick Start
-
-### Prerequisites
-
-- Docker & Docker Compose
-- (Optional) Local Ghidra installation for binary analysis
-
-### Setup
-
-1. **Clone and configure environment**
-   ```bash
-   cd reforge/docker
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-2. **Generate encryption key**
-   ```bash
-   # Linux/Mac
-   openssl rand -hex 32
-   # Add output to N8N_ENCRYPTION_KEY in .env
-   ```
-
-3. **Start the stack**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Access n8n**
-   
-   Open http://localhost:5678 in your browser
-
+Clean, simplified build system for controlled reverse engineering experiments. FastAPI orchestration layer with separated worker domains (builder, ghidra, llm).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        n8n Orchestration                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
-│  │  Binary  │→ │    IR    │→ │   LLM    │→ │   Validation     │ │
-│  │  Lifting │  │ Context  │  │ Decompile│  │   & Repair       │ │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-         │                           │                    │
-         ▼                           ▼                    ▼
-┌─────────────┐             ┌──────────────┐      ┌─────────────┐
-│   Ghidra    │             │   OpenAI /   │      │   GCC /     │
-│   Worker    │             │   Anthropic  │      │   Clang     │
-│             │             │   / Ollama   │      │   + ASAN    │
-└─────────────┘             └──────────────┘      └─────────────┘
-         │                           │                    │
-         └───────────────────────────┴────────────────────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    ▼                         ▼
-            ┌─────────────┐           ┌─────────────┐
-            │ PostgreSQL  │           │    Redis    │
-            │ Provenance  │           │   Queues    │
-            └─────────────┘           └─────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  n8n Orchestration                                          │
+│  (Workflows, Scheduling, Provenance)                        │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Reforge API (FastAPI) - http://localhost:8080              │
+│  ├── /builder  → Build C/C++ projects                       │
+│  ├── /ghidra   → Decompile binaries                         │
+│  └── /llm      → AI-powered analysis                        │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+        ┌────────┴────────┬────────────────┐
+        ▼                 ▼                ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ Builder      │  │ Ghidra       │  │ LLM          │
+│ Worker       │  │ Worker       │  │ Worker       │
+│ (GCC/Clang)  │  │ (Headless)   │  │ (GPT/Claude) │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                 │
+       └─────────────────┴─────────────────┘
+                         │
+                ┌────────┴─────────┐
+                ▼                  ▼
+        ┌──────────────┐   ┌──────────────┐
+        │ PostgreSQL   │   │ Redis Queue  │
+        │ (Provenance) │   │ (Job Queue)  │
+        └──────────────┘   └──────────────┘
 ```
 
-## Workflows
+## Directory Structure
 
-### Core Pipelines (planned)
+```
+reforge/
+├── app/                      # FastAPI application (orchestration layer)
+│   ├── main.py              # Main app with router registration
+│   ├── config.py            # Centralized configuration
+│   └── routers/             # Domain-separated endpoints
+│       ├── builder.py       # Build job submission/status
+│       ├── ghidra.py        # Decompilation endpoints (placeholder)
+│       └── llm.py           # AI analysis endpoints (placeholder)
+│
+├── workers/                  # Heavy lifting workers
+│   ├── builder/             # C/C++ build worker (IMPLEMENTED)
+│   │   ├── build_logic.py   # Core build implementation
+│   │   └── worker.py        # Redis consumer (placeholder)
+│   ├── ghidra/              # Ghidra decompilation (TODO)
+│   └── llm/                 # LLM-based analysis (TODO)
+│
+├── db/postgres/             # Database schemas
+│   ├── init.sql
+│   └── provenance.sql       # build_jobs, binaries, functions, llm_interactions
+│
+└── docker/                   # Deployment
+    ├── docker-compose.yml
+    └── local-files/         # Mounted artifacts
+```
 
-| Workflow | Description |
-|----------|-------------|
-| `01-binary-intake.json` | Import binary, extract functions, compute hashes |
-| `02-decompile-llm.json` | LLM-based decompilation with model selection |
-| `03-validation-loop.json` | Compile + ASAN feedback for iterative repair |
-| `04-batch-experiment.json` | Run experiments across binary corpus |
+## Services
 
-### Importing Workflows
+| Service | Port | Purpose |
+|---------|------|---------|
+| **reforge-api** | 8080 | Unified HTTP interface for n8n |
+| **builder-worker** | - | Builds C/C++ projects (GCC 11, Clang 14) |
+| **n8n** | 5678 | Workflow orchestration |
+| **postgres** | 5432 | Provenance tracking |
+| **redis** | 6379 | Job queue |
 
-1. Open n8n at http://localhost:5678
-2. Go to **Workflows** → **Import from File**
-3. Select workflow JSON from `n8n/workflows/`
+## Quick Start
+
+```bash
+cd docker
+
+# Start services
+docker compose up -d
+
+# Check API health
+curl http://localhost:8080/health
+
+# View API documentation
+open http://localhost:8080/docs
+
+# Submit build job
+curl -X POST http://localhost:8080/builder/build \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/DaveGamble/cJSON",
+    "commit_ref": "master",
+    "compiler": "gcc",
+    "optimizations": ["O0", "O2", "O3"]
+  }'
+```
+
+## Current Status
+
+**✅ Implemented:**
+- Clean separation: API layer (app/) ↔ Workers (workers/)
+- Modular routers for builder, ghidra, llm domains
+- Builder worker with comprehensive build logic (clone, detect, compile, discover binaries)
+- Database schema for provenance tracking (build_jobs, synthetic_code, binaries)
+- Docker Compose orchestration
+
+**⏳ TODO (Placeholders exist):**
+- Redis queue integration for builder worker
+- PostgreSQL client for job/artifact tracking
+- Artifact storage to local filesystem
+- Ghidra worker implementation
+- LLM worker implementation
 
 ## Database Schema
 
 Key tables in the `reforge` schema:
 
-- **`binaries`** - Analyzed binary metadata
+- **`build_jobs`** - Git build tracking (repo, commit, compiler, optimizations, status)
+- **`synthetic_code`** - Hand-crafted test cases with ground truth
+- **`binaries`** - Build artifacts with provenance (linked to build_jobs OR synthetic_code)
 - **`functions`** - Extracted functions with decompiled code
 - **`llm_interactions`** - Full provenance of every LLM call
 - **`decompilation_results`** - Generated code with validation status

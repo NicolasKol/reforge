@@ -6,23 +6,110 @@
 SET search_path TO reforge, public;
 
 -- =============================================================================
--- Binary Analysis Targets
+-- Build Jobs - Track C/C++ project builds
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS binaries (
+CREATE TABLE IF NOT EXISTS build_jobs (
     id UUID PRIMARY KEY DEFAULT public.uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    sha256_hash VARCHAR(64) UNIQUE NOT NULL,
-    file_size BIGINT,
-    architecture VARCHAR(50),  -- x86, x86_64, ARM, etc.
-    compiler_info VARCHAR(255),
-    optimization_level VARCHAR(10),  -- O0, O1, O2, O3, Os
-    source_language VARCHAR(50),  -- C, C++, Rust, Go
-    metadata JSONB DEFAULT '{}',
+    
+    -- Source
+    repo_url VARCHAR(500),  -- Git URL (null for synthetic builds)
+    commit_ref VARCHAR(255),  -- Branch/tag/commit
+    commit_hash VARCHAR(64),  -- Actual commit SHA
+    
+    -- Configuration
+    compiler VARCHAR(50) NOT NULL,  -- gcc, clang
+    compiler_version VARCHAR(50),  -- e.g., "11.4.0"
+    optimizations JSONB NOT NULL,  -- ["O0", "O2", "O3"]
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'QUEUED',  -- QUEUED, BUILDING, SUCCESS, FAILED, TIMEOUT
+    error_message TEXT,
+    build_log TEXT,
+    
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    started_at TIMESTAMP WITH TIME ZONE,
+    finished_at TIMESTAMP WITH TIME ZONE,
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}'
+);
+
+CREATE INDEX idx_build_jobs_status ON build_jobs(status);
+CREATE INDEX idx_build_jobs_created ON build_jobs(created_at);
+CREATE INDEX idx_build_jobs_repo ON build_jobs(repo_url);
+
+-- =============================================================================
+-- Synthetic Code - For synthetic/hand-crafted test cases
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS synthetic_code (
+    id UUID PRIMARY KEY DEFAULT public.uuid_generate_v4(),
+    
+    -- Source
+    name VARCHAR(255) UNIQUE NOT NULL,
+    description TEXT,
+    source_code TEXT NOT NULL,
+    source_hash VARCHAR(64) NOT NULL,  -- SHA256 of source code
+    language VARCHAR(50) DEFAULT 'c',  -- c, cpp
+    
+    -- Metadata
+    complexity_level VARCHAR(50),  -- simple, medium, complex
+    test_category VARCHAR(100) NOT NULL,  -- arrays, loops, strings, functions, etc.
+    ground_truth JSONB DEFAULT '{}',  -- Known correct variable names, types, etc.
+    
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_binaries_hash ON binaries(sha256_hash);
+CREATE INDEX idx_synthetic_category ON synthetic_code(test_category);
+CREATE INDEX idx_synthetic_name ON synthetic_code(name);
+
+-- =============================================================================
+-- Binary Analysis Targets
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS binaries (
+    id UUID PRIMARY KEY DEFAULT public.uuid_generate_v4(),
+    
+    -- Identification
+    file_path TEXT NOT NULL,  -- Local filesystem path
+    file_hash VARCHAR(64) UNIQUE NOT NULL,  -- SHA256 of binary file
+    file_size BIGINT,
+    
+    -- Build Provenance
+    build_job_id UUID REFERENCES build_jobs(id) ON DELETE SET NULL,
+    synthetic_code_id UUID REFERENCES synthetic_code(id) ON DELETE SET NULL,
+    
+    -- Build Configuration
+    compiler VARCHAR(50),  -- gcc, clang
+    compiler_version VARCHAR(50),
+    optimization_level VARCHAR(10),  -- O0, O1, O2, O3, Os
+    
+    -- Binary Properties
+    architecture VARCHAR(50) DEFAULT 'x86_64',  -- x86, x86_64, ARM, etc.
+    
+    -- Debug Info & Variants
+    has_debug_info BOOLEAN DEFAULT FALSE,
+    is_stripped BOOLEAN DEFAULT FALSE,
+    variant_type VARCHAR(20),  -- 'debug', 'release', 'stripped'
+    debug_sections JSONB DEFAULT '[]',  -- [".debug_info", ".debug_line", ...]
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    -- Constraint: binary must be from either a build job OR synthetic code, not both
+    CONSTRAINT binary_source_check CHECK (
+        (build_job_id IS NOT NULL AND synthetic_code_id IS NULL) OR
+        (build_job_id IS NULL AND synthetic_code_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX idx_binaries_build_job ON binaries(build_job_id);
+CREATE INDEX idx_binaries_synthetic ON binaries(synthetic_code_id);
+CREATE INDEX idx_binaries_hash ON binaries(file_hash);
+CREATE INDEX idx_binaries_variant ON binaries(variant_type);
+CREATE INDEX idx_binaries_optimization ON binaries(optimization_level);
 CREATE INDEX idx_binaries_arch ON binaries(architecture);
 
 -- =============================================================================
