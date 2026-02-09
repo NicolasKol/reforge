@@ -8,17 +8,19 @@ Reads debug-variant ELF binaries (compiled with `gcc -g`), extracts function-lev
 
 See [LOCK.md](LOCK.md) for the v0 scope contract.
 
-## Running as a service
+## Running via the central API
+
+The oracle is integrated as a router in the main reforge API:
 
 ```bash
 # From docker/
-docker compose up oracle-dwarf
+docker compose up api
 ```
 
-The service exposes a single endpoint:
+The oracle endpoint is available at:
 
 ```
-POST http://localhost:8081/oracle/run
+POST http://localhost:8080/oracle/run
 Content-Type: application/json
 
 {
@@ -28,7 +30,7 @@ Content-Type: application/json
 
 This scans all debug-variant binaries at the specified optimization level under `/files/artifacts/synthetic/` and returns per-binary verdicts with function counts.
 
-API docs at: `http://localhost:8081/docs`
+API docs at: `http://localhost:8080/docs`
 
 ## Running tests
 
@@ -58,12 +60,11 @@ oracle_dwarf/
 ├── io/
 │   ├── schema.py        # Pydantic output models
 │   └── writer.py        # JSON serialization
-├── api/
-│   ├── app.py           # Standalone FastAPI app
-│   └── router.py        # /oracle/run endpoint
 └── tests/
     ├── conftest.py       # gcc fixture compilation
     ├── test_gate.py      # Binary-level gate tests
     ├── test_functions.py # Function enumeration invariants
     └── test_linespan.py  # Line span invariants
 ```
+
+The oracle router is registered in `app/routers/oracle.py` as part of the central reforge API.

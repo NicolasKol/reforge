@@ -56,50 +56,51 @@ class Compiler(str):
     pass
 
 
-class BuildRequest(BaseModel):
-    """Request to build a C/C++ project"""
-    repo_url: str = Field(..., description="Git repository URL")
-    commit_ref: str = Field("HEAD", description="Branch, tag, or commit hash")
-    compiler: str = Field("gcc", description="Compiler: gcc or clang")
-    optimizations: List[str] = Field(
-        default=["O0", "O2", "O3"],
-        description="Optimization levels to build"
-    )
-    debug_symbols: bool = Field(True, description="Include debug symbols")
-    save_assembly: bool = Field(False, description="Save assembly files")
+# FUTURE WORK: Git repository builds - DON'T TOUCH
+# class BuildRequest(BaseModel):
+#     """Request to build a C/C++ project"""
+#     repo_url: str = Field(..., description="Git repository URL")
+#     commit_ref: str = Field("HEAD", description="Branch, tag, or commit hash")
+#     compiler: str = Field("gcc", description="Compiler: gcc or clang")
+#     optimizations: List[str] = Field(
+#         default=["O0", "O2", "O3"],
+#         description="Optimization levels to build"
+#     )
+#     debug_symbols: bool = Field(True, description="Include debug symbols")
+#     save_assembly: bool = Field(False, description="Save assembly files")
 
 
-class BuildJobResponse(BaseModel):
-    """Response after submitting a build job"""
-    job_id: str
-    status: str
-    message: str
+# class BuildJobResponse(BaseModel):
+#     """Response after submitting a build job"""
+#     job_id: str
+#     status: str
+#     message: str
 
 
-class BuildStatusResponse(BaseModel):
-    """Current status of a build job"""
-    job_id: str
-    status: str
-    repo_url: str
-    commit_ref: str
-    compiler: str
-    optimizations: List[str]
-    commit_hash: Optional[str] = None
-    artifact_count: int = 0
-    created_at: Optional[str] = None
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
-    error_message: Optional[str] = None
+# class BuildStatusResponse(BaseModel):
+#     """Current status of a build job"""
+#     job_id: str
+#     status: str
+#     repo_url: str
+#     commit_ref: str
+#     compiler: str
+#     optimizations: List[str]
+#     commit_hash: Optional[str] = None
+#     artifact_count: int = 0
+#     created_at: Optional[str] = None
+#     started_at: Optional[str] = None
+#     finished_at: Optional[str] = None
+#     error_message: Optional[str] = None
 
 
-class ArtifactInfo(BaseModel):
-    """Information about a built artifact"""
-    filename: str
-    optimization: str
-    sha256: str
-    size_bytes: int
-    has_debug_info: bool
-    file_path: str
+# class ArtifactInfo(BaseModel):
+#     """Information about a built artifact"""
+#     filename: str
+#     optimization: str
+#     sha256: str
+#     size_bytes: int
+#     has_debug_info: bool
+#     file_path: str
 
 
 class SyntheticBuildRequest(BaseModel):
@@ -130,36 +131,37 @@ class SyntheticBuildResponse(BaseModel):
 router = APIRouter()
 
 
-@router.post("/build", response_model=BuildJobResponse, status_code=status.HTTP_202_ACCEPTED)
-async def submit_build(request: BuildRequest, redis_client: redis.Redis = Depends(get_redis)):
-    """
-    Submit a git repository build job to the queue.
-    
-    The job will be processed asynchronously by builder workers.
-    Use the returned job_id to poll for status.
-    """
-    job_id = str(uuid.uuid4())
-    
-    # Prepare job payload
-    job_data = {
-        "job_id": job_id,
-        "job_type": "git_build",
-        "repo_url": request.repo_url,
-        "commit_ref": request.commit_ref,
-        "compiler": request.compiler,
-        "optimizations": request.optimizations,
-        "debug_symbols": request.debug_symbols,
-        "save_assembly": request.save_assembly
-    }
-    
-    # Enqueue to Redis
-    redis_client.rpush("builder:queue", json.dumps(job_data))
-    
-    return BuildJobResponse(
-        job_id=job_id,
-        status="QUEUED",
-        message=f"Build job queued for {request.repo_url}"
-    )
+# FUTURE WORK: Git repository builds - DON'T TOUCH
+# @router.post("/build", response_model=BuildJobResponse, status_code=status.HTTP_202_ACCEPTED)
+# async def submit_build(request: BuildRequest, redis_client: redis.Redis = Depends(get_redis)):
+#     """
+#     Submit a git repository build job to the queue.
+#     
+#     The job will be processed asynchronously by builder workers.
+#     Use the returned job_id to poll for status.
+#     """
+#     job_id = str(uuid.uuid4())
+#     
+#     # Prepare job payload
+#     job_data = {
+#         "job_id": job_id,
+#         "job_type": "git_build",
+#         "repo_url": request.repo_url,
+#         "commit_ref": request.commit_ref,
+#         "compiler": request.compiler,
+#         "optimizations": request.optimizations,
+#         "debug_symbols": request.debug_symbols,
+#         "save_assembly": request.save_assembly
+#     }
+#     
+#     # Enqueue to Redis
+#     redis_client.rpush("builder:queue", json.dumps(job_data))
+#     
+#     return BuildJobResponse(
+#         job_id=job_id,
+#         status="QUEUED",
+#         message=f"Build job queued for {request.repo_url}"
+#     )
 
 
 @router.post("/synthetic", response_model=SyntheticBuildResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -345,41 +347,42 @@ async def get_synthetic_status(name: str, db_conn = Depends(get_db)):
         cursor.close()
 
 
-@router.get("/build/{job_id}/artifacts", response_model=List[ArtifactInfo])
-async def get_build_artifacts(job_id: str):
-    """
-    Get list of artifacts produced by a build job.
-    
-    **TODO:**
-    - Query PostgreSQL for binaries with build_job_id
-    - Return artifact metadata (filename, sha256, optimization level, etc.)
-    """
-    # PLACEHOLDER
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Artifact listing not implemented yet"
-    )
+# FUTURE WORK: Git repository builds - DON'T TOUCH
+# @router.get("/build/{job_id}/artifacts", response_model=List[ArtifactInfo])
+# async def get_build_artifacts(job_id: str):
+#     """
+#     Get list of artifacts produced by a build job.
+#     
+#     **TODO:**
+#     - Query PostgreSQL for binaries with build_job_id
+#     - Return artifact metadata (filename, sha256, optimization level, etc.)
+#     """
+#     # PLACEHOLDER
+#     raise HTTPException(
+#         status_code=status.HTTP_501_NOT_IMPLEMENTED,
+#         detail="Artifact listing not implemented yet"
+#     )
 
 
-@router.get("/builds", response_model=List[BuildStatusResponse])
-async def list_builds(
-    status_filter: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0
-):
-    """
-    List build jobs with optional filtering.
-    
-    **TODO:**
-    - Query PostgreSQL with pagination
-    - Filter by status if provided
-    - Return list of build jobs
-    """
-    # PLACEHOLDER
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Build listing not implemented yet"
-    )
+# @router.get("/builds", response_model=List[BuildStatusResponse])
+# async def list_builds(
+#     status_filter: Optional[str] = None,
+#     limit: int = 50,
+#     offset: int = 0
+# ):
+#     """
+#     List build jobs with optional filtering.
+#     
+#     **TODO:**
+#     - Query PostgreSQL with pagination
+#     - Filter by status if provided
+#     - Return list of build jobs
+#     """
+#     # PLACEHOLDER
+#     raise HTTPException(
+#         status_code=status.HTTP_501_NOT_IMPLEMENTED,
+#         detail="Build listing not implemented yet"
+#     )
 
 
 @router.delete("/synthetic/{name}")
