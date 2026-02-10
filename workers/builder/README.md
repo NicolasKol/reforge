@@ -34,27 +34,6 @@ Base cflags: `-std=c11 -Wno-error -fno-omit-frame-pointer -mno-omit-leaf-frame-p
 
 Link-flag allowlist: `["-lm"]`
 
-## Artifact Layout
-
-```
-/files/synthetic/{name}/
-├── src/                          # frozen source snapshot
-│   ├── *.c
-│   └── *.h
-├── build_receipt.json            # THE receipt
-├── O0/
-│   ├── debug/
-│   │   ├── obj/    (*.o)
-│   │   ├── bin/    (ELF)
-│   │   └── logs/   (compile.log, link.log)
-│   ├── release/
-│   │   ├── obj/ bin/ logs/
-│   └── stripped/
-│       ├── obj/ bin/ logs/ strip.log
-├── O1/ ...
-├── O2/ ...
-└── O3/ ...
-```
 
 ## BuildReceipt Schema
 
@@ -69,36 +48,6 @@ Defined in `receipt.py`. Key models:
 - **ArtifactMeta** — path, SHA-256, size, ELF metadata, debug presence
 - **BuildFlag** — 9 flags (BUILD_FAILED, TIMEOUT, NO_ARTIFACT, etc.)
 
-## Architecture
-
-```
-┌─────────────┐        ┌──────────────┐       ┌────────────┐
-│  API router  │──push──│  Redis queue  │──pop──│   Worker   │
-│ builder.py   │        │ builder:queue │       │ worker.py  │
-└─────────────┘        └──────────────┘       └─────┬──────┘
-                                                     │
-                                            SyntheticBuildJob
-                                          (synthetic_builder.py)
-                                                     │
-                                              build_receipt.json
-                                                     │
-                                              ┌──────▼──────┐
-                                              │  PostgreSQL  │
-                                              │ provenance   │
-                                              └─────────────┘
-```
-
-## Files
-
-| File                   | Role                                    |
-|------------------------|-----------------------------------------|
-| `__init__.py`          | Version, builder name, profile ID       |
-| `receipt.py`           | Pydantic schema (20+ models)            |
-| `synthetic_builder.py` | Core build logic (3-phase, 12-cell)     |
-| `worker.py`            | Redis consumer + DB persistence         |
-| `Dockerfile`           | python:3.11-slim + gcc + binutils       |
-| `requirements.txt`     | pydantic, redis, psycopg2, pyelftools   |
-| `LOCK.md`              | Scope contract — what v1 does and doesn't do |
 
 ## Non-Goals (v1)
 
