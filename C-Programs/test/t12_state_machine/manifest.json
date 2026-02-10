@@ -1,0 +1,8 @@
+{
+    "name": "t12_state_machine",
+    "description": "State machine with function-pointer transition tables, cross-file state handlers, and static-scoped helper functions. Combines enum dispatch, fptr tables, and static name collisions.",
+    "files": ["state.h", "transitions.c", "handlers.c", "main.c"],
+    "stress_tags": ["state_machine", "fptr_callbacks", "static_dup_names", "enum_dispatch"],
+    "oracle_pressure": "State machine transitions via function-pointer tables produce complex indirect call graphs. Each handler file has static helpers with identical names. Oracle must disambiguate which 'on_enter'/'on_exit' belongs to which CU and correlate DW_TAG_subprogram scoping with DW_AT_decl_file.",
+    "requires_libm": false
+}

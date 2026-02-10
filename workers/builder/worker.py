@@ -1,33 +1,38 @@
 """
-Builder Worker
-Consumes build jobs from Redis queue and executes builds.
+Builder Worker — builder_synth_v1
+
+Consumes synthetic build jobs from Redis queue and executes them.
+Produces ELF binaries + BuildReceipt, then persists results to PostgreSQL.
+
+No git builds. See LOCK.md.
 """
 import os
 import sys
 import json
 import time
-import hashlib
-import redis
-import psycopg2
+import logging
 from pathlib import Path
 from typing import Optional
-import logging
 
-# Add parent directory to path to import build_logic
-sys.path.insert(0, str(Path(__file__).parent))
-from build_logic import BuildJob, Compiler, OptLevel, BuildStatus
-from synthetic_builder import SyntheticBuildJob, BinaryVariant
+import redis
+import psycopg2
 
+from receipt import OptLevel, VariantType
+from synthetic_builder import SyntheticBuildJob
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+)
+logger = logging.getLogger("builder_worker")
 
 
 class BuildWorker:
     """
-    Worker that pulls build jobs from Redis and executes them.
+    Worker that pulls synthetic build jobs from Redis and executes them.
+    Results are persisted to PostgreSQL and artifacts written to disk.
     """
-    
+
     def __init__(
         self,
         redis_host: str = "redis",
@@ -38,7 +43,7 @@ class BuildWorker:
         db_user: str = "reforge",
         db_password: str = "reforge_pw",
         workspace_root: str = "/tmp/reforge_builds",
-        artifacts_path: str = "/files/artifacts"
+        artifacts_path: str = "/files/artifacts",
     ):
         self.redis_host = redis_host
         self.redis_port = redis_port
@@ -47,222 +52,272 @@ class BuildWorker:
             "port": db_port,
             "database": db_name,
             "user": db_user,
-            "password": db_password
+            "password": db_password,
         }
-        self.workspace_root = workspace_root
+        self.workspace_root = Path(workspace_root)
         self.artifacts_path = Path(artifacts_path)
-        
-        # Initialize connections
-        self.redis_client: Optional["redis.Redis"] = None
-        self.db_conn: Optional["psycopg2.extensions.connection"] = None
-    
+
+        self.redis_client: Optional[redis.Redis] = None
+        self.db_conn: Optional[psycopg2.extensions.connection] = None
+
     def connect(self):
-        """Establish Redis and PostgreSQL connections"""
+        """Establish Redis and PostgreSQL connections."""
         logger.info("Connecting to Redis...")
         self.redis_client = redis.Redis(
             host=self.redis_host,
             port=self.redis_port,
-            decode_responses=True
+            decode_responses=True,
         )
         self.redis_client.ping()
         logger.info("Redis connected")
-        
+
         logger.info("Connecting to PostgreSQL...")
         self.db_conn = psycopg2.connect(**self.db_config)
         logger.info("PostgreSQL connected")
-    
+
     def run(self):
-        """Main worker loop"""
+        """Main worker loop — blocking pop from Redis queue."""
         self.connect()
-        
-        logger.info("Builder worker started, waiting for jobs...")
+        logger.info("Builder worker v1 started, waiting for jobs...")
         queue_name = "builder:queue"
-        
+
         while True:
             try:
-                # Blocking pop from Redis queue (timeout 5 seconds)
                 if self.redis_client is None:
                     raise RuntimeError("Redis client not connected")
-                
+
                 result = self.redis_client.blpop([queue_name], timeout=5)
-                
                 if result is None:
                     continue
-                
-                # result is a tuple: (queue_name, value)
+
                 _, job_data = result  # type: ignore
                 job = json.loads(job_data)
-                
-                logger.info(f"Received job: {job['job_id']}")
-                self.process_job(job)
-                
+
+                job_type = job.get("job_type", "")
+                if job_type != "synthetic_build":
+                    logger.warning(f"Unknown job type '{job_type}', skipping")
+                    continue
+
+                logger.info(f"Received synthetic build job: {job['job_id']}")
+                self.process_synthetic_build(job)
+
             except KeyboardInterrupt:
                 logger.info("Worker shutting down...")
                 break
             except Exception as e:
                 logger.error(f"Error in worker loop: {e}", exc_info=True)
-                time.sleep(5)  # Backoff on error
-    
-    def process_job(self, job_data: dict):
-        """
-        Process a single build job.
-        Handles both git repository builds and synthetic source builds.
-        """
-        job_id = job_data["job_id"]
-        job_type = job_data.get("job_type", "git_build")
-        
-        logger.info(f"Processing {job_type} job {job_id}")
-        
-        try:
-            if job_type == "synthetic_build":
-                self.process_synthetic_build(job_data)
-            elif job_type == "git_build":
-                self.process_git_build(job_data)
-            else:
-                logger.error(f"Unknown job type: {job_type}")
-        
-        except Exception as e:
-            logger.error(f"Job {job_id} failed: {e}", exc_info=True)
-            # TODO: Update database with failure status
-    
+                time.sleep(5)
+
+    # -----------------------------------------------------------------
+    # Synthetic build processing
+    # -----------------------------------------------------------------
+
     def process_synthetic_build(self, job_data: dict):
         """
-        Process a synthetic source code build job.
-        
-        This compiles a single C/C++ source file at multiple optimization levels
-        and creates debug, release, and stripped variants for testing.
+        Process a synthetic build job:
+          1. Build all cells (or single target)
+          2. Persist results to database
         """
         job_id = job_data["job_id"]
         name = job_data["name"]
-        
-        logger.info(f"Starting synthetic build: {name}")
-        
+        logger.info(f"Starting synthetic build: {name} (job_id={job_id})")
+
+        # Parse optimizations
+        opt_list = [OptLevel(o) for o in job_data.get("optimizations", ["O0", "O1", "O2", "O3"])]
+
+        # Parse optional single-target
+        target_opt = None
+        target_variant = None
+        target_data = job_data.get("target")
+        if target_data:
+            target_opt = OptLevel(target_data["optimization"])
+            target_variant = VariantType(target_data["variant"])
+
         # Create build job
-        compilers_list = [Compiler(c) for c in job_data["compilers"]]
-        optimizations_list = [OptLevel(o) for o in job_data["optimizations"]]
-        
         build_job = SyntheticBuildJob(
+            job_id=job_id,
             name=name,
-            source_code=job_data["source_code"],
+            files=job_data["files"],
             test_category=job_data["test_category"],
-            language=job_data.get("language", "c"),
-            compilers=compilers_list, #type: ignore
-            optimizations=optimizations_list, #type: ignore
+            optimizations=opt_list,
             artifacts_dir=self.artifacts_path / "synthetic" / name,
-            timeout=30
+            workspace_dir=self.workspace_root / name,
+            timeout=120,
         )
-        
-        # Execute build
-        artifacts, errors = build_job.execute()
-        
-        # Save manifest
-        build_job.save_manifest()
-        
-        # Clean up workspace
+
+        # Execute
+        receipt = build_job.execute(
+            target_opt=target_opt,
+            target_variant=target_variant,
+        )
+
+        # Cleanup workspace
         build_job.cleanup_workspace()
-        
-        # Insert to database
-        if artifacts:
-            self.insert_synthetic_build(job_data, artifacts)
-        
-        logger.info(f"Synthetic build complete: {len(artifacts)} artifacts, {len(errors)} errors")
-    
-    def process_git_build(self, job_data: dict):
-        """
-        Process a git repository build job.
-        
-        TODO: Implement git builds using BuildJob from build_logic
-        """
-        job_id = job_data["job_id"]
-        logger.info(f"Git build not yet implemented: {job_id}")
-        
-        # TODO: Implement
-        # build_job = BuildJob(
-        #     job_id=job_id,
-        #     repo_url=job_data["repo_url"],
-        #     commit_ref=job_data["commit_ref"],
-        #     compiler=Compiler(job_data["compiler"]),
-        #     optimizations=[OptLevel(o) for o in job_data["optimizations"]],
-        #     workspace_root=self.workspace_root
-        # )
-        # results = build_job.execute()
-        # self.save_artifacts(job_id, results)
-        # self.update_database(job_id, results)
-    
-    def insert_synthetic_build(self, job_data: dict, artifacts):
-        """Insert synthetic code and binaries to database"""
+
+        # Persist to database
+        self.persist_results(job_data, receipt)
+
+        logger.info(
+            f"Synthetic build complete: {name} — "
+            f"status={receipt.job.status}, "
+            f"cells={len(receipt.builds)}"
+        )
+
+    # -----------------------------------------------------------------
+    # Database persistence
+    # -----------------------------------------------------------------
+
+    def persist_results(self, job_data: dict, receipt):
+        """Insert synthetic_code + binaries rows into PostgreSQL."""
         if self.db_conn is None:
-            logger.error("Database not connected")
+            logger.error("Database not connected — cannot persist results")
             return
-        
+
         cursor = None
         try:
             cursor = self.db_conn.cursor()
-            
-            # Calculate source hash
-            source_hash = hashlib.sha256(job_data["source_code"].encode()).hexdigest()
-            
-            # Insert synthetic_code record
-            cursor.execute("""
-                INSERT INTO reforge.synthetic_code (name, source_code, source_hash, test_category, language)
-                VALUES (%s, %s, %s, %s, %s)
+
+            # Build source_files JSONB from receipt
+            source_files_json = json.dumps([
+                {
+                    "path_rel": sf.path_rel,
+                    "sha256": sf.sha256,
+                    "size_bytes": sf.size_bytes,
+                    "role": sf.role.value,
+                }
+                for sf in receipt.source.files
+            ])
+
+            # Receipt summary as metadata
+            metadata = {
+                "profile": receipt.profile.profile_id,
+                "builder_version": receipt.builder.version,
+                "toolchain": receipt.toolchain.model_dump(),
+                "job_status": receipt.job.status,
+                "cell_count": len(receipt.builds),
+                "success_count": sum(
+                    1 for c in receipt.builds if c.status.value == "SUCCESS"
+                ),
+                "receipt_path": f"synthetic/{job_data['name']}/build_receipt.json",
+            }
+
+            # Upsert synthetic_code
+            cursor.execute(
+                """
+                INSERT INTO reforge.synthetic_code (
+                    id, name, test_category, language,
+                    snapshot_sha256, status, file_count,
+                    source_files, metadata
+                ) VALUES (
+                    %s::uuid, %s, %s, %s,
+                    %s, %s, %s,
+                    %s::jsonb, %s::jsonb
+                )
                 ON CONFLICT (name) DO UPDATE SET
-                    source_code = EXCLUDED.source_code,
-                    source_hash = EXCLUDED.source_hash,
                     test_category = EXCLUDED.test_category,
-                    language = EXCLUDED.language
+                    language = EXCLUDED.language,
+                    snapshot_sha256 = EXCLUDED.snapshot_sha256,
+                    status = EXCLUDED.status,
+                    file_count = EXCLUDED.file_count,
+                    source_files = EXCLUDED.source_files,
+                    metadata = EXCLUDED.metadata,
+                    updated_at = NOW()
                 RETURNING id
-            """, (
-                job_data["name"],
-                job_data["source_code"],
-                source_hash,
-                job_data["test_category"],
-                job_data.get("language", "c")
-            ))
-            
+                """,
+                (
+                    job_data["job_id"],
+                    job_data["name"],
+                    job_data["test_category"],
+                    job_data.get("language", "c"),
+                    receipt.source.snapshot_sha256,
+                    receipt.job.status,
+                    len(receipt.source.files),
+                    source_files_json,
+                    json.dumps(metadata),
+                ),
+            )
+
             result = cursor.fetchone()
             if result is None:
                 logger.error("Failed to insert synthetic_code")
                 return
-            
             synthetic_id = result[0]
-            logger.info(f"Inserted synthetic_code: {synthetic_id}")
-            
-            # Insert binaries
-            for artifact in artifacts:
-                # Calculate actual binary file hash
-                binary_hash = hashlib.sha256(open(artifact.binary_path, 'rb').read()).hexdigest()
-                
-                cursor.execute("""
+
+            # Delete existing binaries for this synthetic_code (full rebuild)
+            cursor.execute(
+                "DELETE FROM reforge.binaries WHERE synthetic_code_id = %s",
+                (synthetic_id,),
+            )
+
+            # Insert binaries from receipt
+            inserted = 0
+            for cell in receipt.builds:
+                if cell.artifact is None:
+                    continue
+
+                # Resolve full file path
+                artifact_abs = self.artifacts_path / "synthetic" / job_data["name"] / cell.artifact.path_rel
+                file_path = str(artifact_abs)
+
+                has_debug = False
+                is_stripped = False
+                if cell.variant == "debug":
+                    has_debug = (
+                        cell.artifact.debug_presence is not None
+                        and cell.artifact.debug_presence.has_debug_sections
+                    )
+                elif cell.variant == "stripped":
+                    is_stripped = True
+
+                elf_meta = cell.artifact.elf.model_dump() if cell.artifact.elf else {}
+
+                cursor.execute(
+                    """
                     INSERT INTO reforge.binaries (
                         synthetic_code_id,
+                        file_path, file_hash, file_size,
+                        compiler, optimization_level, variant_type,
+                        architecture, has_debug_info, is_stripped,
+                        elf_metadata, metadata
+                    ) VALUES (
+                        %s, %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s, %s,
+                        %s::jsonb, %s::jsonb
+                    )
+                    ON CONFLICT (file_hash) DO UPDATE SET
+                        file_path = EXCLUDED.file_path,
+                        file_size = EXCLUDED.file_size,
+                        updated_at = NOW()
+                    """,
+                    (
+                        synthetic_id,
                         file_path,
-                        file_hash,
-                        file_size,
-                        compiler,
-                        optimization_level,
-                        has_debug_info,
+                        cell.artifact.sha256,
+                        cell.artifact.size_bytes,
+                        "gcc",  # profile-locked
+                        cell.optimization,
+                        cell.variant,
+                        cell.artifact.elf.arch if cell.artifact.elf else "x86_64",
+                        has_debug,
                         is_stripped,
-                        variant_type
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (file_hash) DO NOTHING
-                """, (
-                    synthetic_id,
-                    str(artifact.binary_path),
-                    binary_hash,
-                    artifact.file_size,
-                    artifact.compiler.value,
-                    artifact.optimization.value,
-                    artifact.has_debug_info,
-                    artifact.is_stripped,
-                    artifact.variant.value
-                ))
-            
+                        json.dumps(elf_meta),
+                        json.dumps({
+                            "flags": [f.value for f in cell.flags],
+                            "cell_status": cell.status.value,
+                        }),
+                    ),
+                )
+                inserted += 1
+
             self.db_conn.commit()
-            logger.info(f"Inserted {len(artifacts)} binaries for synthetic_code {synthetic_id}")
-            
+            logger.info(
+                f"Persisted synthetic_code {synthetic_id} "
+                f"with {inserted} binaries"
+            )
+
         except Exception as e:
-            logger.error(f"Database insertion failed: {e}", exc_info=True)
+            logger.error(f"Database persistence failed: {e}", exc_info=True)
             if self.db_conn:
                 self.db_conn.rollback()
         finally:
@@ -270,8 +325,11 @@ class BuildWorker:
                 cursor.close()
 
 
+# =============================================================================
+# Entry point
+# =============================================================================
+
 if __name__ == "__main__":
-    # Read config from environment
     worker = BuildWorker(
         redis_host=os.getenv("REDIS_HOST", "redis"),
         redis_port=int(os.getenv("REDIS_PORT", "6379")),
@@ -281,7 +339,6 @@ if __name__ == "__main__":
         db_user=os.getenv("POSTGRES_USER", "reforge"),
         db_password=os.getenv("POSTGRES_PASSWORD", "reforge_pw"),
         workspace_root=os.getenv("BUILDER_WORKSPACE", "/tmp/reforge_builds"),
-        artifacts_path=os.getenv("ARTIFACTS_PATH", "/files/artifacts")
+        artifacts_path=os.getenv("ARTIFACTS_PATH", "/files/artifacts"),
     )
-    
     worker.run()

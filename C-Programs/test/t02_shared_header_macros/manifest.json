@@ -1,0 +1,8 @@
+{
+  "name": "t02_shared_header_macros",
+  "description": "Heavy use of macros and static inline helpers defined in a shared header. Multiple TUs include the header, creating duplicated code locations in DWARF.",
+  "files": ["helpers.h", "arith.c", "sorting.c", "main.c"],
+  "stress_tags": ["shared_header_helper", "inline_risk", "macro_heavy", "multi_file_range"],
+  "oracle_pressure": "Static inline functions appear in DWARF for each TU that includes the header. At O1+ these get inlined: expect RANGES_FRAGMENTED, MULTI_FILE_RANGE warnings. Macro-expanded code has no DWARF name — oracle may emit NAME_MISSING",
+  "requires_libm": false
+}

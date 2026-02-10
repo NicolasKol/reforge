@@ -1,0 +1,8 @@
+{
+    "name": "t06_recursion_inline",
+    "description": "Recursive algorithms and tiny leaf functions that GCC inlines at O1+. Forces oracle_dwarf to handle DW_AT_inline / DW_TAG_inlined_subroutine and detect vanished frames.",
+    "files": ["recurse.h", "tree_ops.c", "math_recurse.c", "main.c"],
+    "stress_tags": ["inline_risk", "recursion", "leaf_functions", "vanished_frames"],
+    "oracle_pressure": "Small leaf functions (abs_val, max2, min2) get inlined at O1+ leaving DW_TAG_inlined_subroutine entries. Recursive functions may have tail-call optimization at O2+ eliminating stack frames.",
+    "requires_libm": false
+}
