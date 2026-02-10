@@ -1,0 +1,8 @@
+{
+    "name": "t09_string_format",
+    "description": "String-heavy formatting and logging module with sprintf/snprintf, manual string builders, and cross-file format dispatch. Exercises GCC's string constant merging and stack buffer handling.",
+    "files": ["format.h", "formatter.c", "logger.c", "main.c"],
+    "stress_tags": ["string_heavy", "format_strings", "stack_buffers", "const_merge"],
+    "oracle_pressure": "String constants may be merged in .rodata across TUs at O1+. Stack buffers for snprintf introduce DW_TAG_variable entries with DW_AT_location pointing to frame offsets that shift across O-levels. Oracle must track these relocations.",
+    "requires_libm": false
+}

@@ -1,0 +1,8 @@
+{
+  "name": "t03_header_dominant",
+  "description": "Substantial logic in headers (data structures, operations). The dominant DWARF file for many functions will be the .h, not the .c. Pressures MULTI_FILE_RANGE.",
+  "files": ["vector.h", "stack_ops.c", "search_ops.c", "main.c"],
+  "stress_tags": ["header_dominant", "inline_risk", "multi_file_range"],
+  "oracle_pressure": "Large static inline functions in header: dominant file will be .h not .c. At O1+ expect RANGES_FRAGMENTED as header code is inlined into multiple TUs. MULTI_FILE_RANGE expected when call sites in .c pull in header line ranges",
+  "requires_libm": false
+}

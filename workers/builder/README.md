@@ -1,80 +1,58 @@
-# Reforge Builder Worker
+# builder\_synth\_v1
 
-Heavy lifting worker for building Linux C/C++ projects. Consumes jobs from Redis queue.
+**Version:** 1.0.0  
+**Profile:** `linux-x86_64-elf-gcc-c`  
+**Scope contract:** See [LOCK.md](LOCK.md)
 
-## Features
+## Purpose
 
-- **Git clone** with submodule support
-- **Build system detection**: CMake, Make, Autoconf, Bootstrap
-- **Compiler support**: GCC 11, Clang 14
-- **Optimization levels**: O0, O1, O2, O3
-- **Debug symbols**: Configurable debug info and frame pointers
-- **Binary discovery**: Automatic ELF executable detection
-- **Provenance tracking**: SHA256 hashes, debug section analysis, build manifests
+Compiles synthetic C source files into ELF binaries across a controlled build matrix, emitting a typed `build_receipt.json` as the single authoritative provenance record per job. Designed for academic benchmarking of reverse-engineering tasks (function boundary detection, decompiler evaluation, LLM-assisted analysis).
 
-## Architecture
+## Build Matrix
 
-```
-FastAPI (reforge/app/) → Redis Queue → BuildWorker (worker.py)
-                                              ↓
-                                    BuildJob (build_logic.py)
-                                              ↓
-                                    Local Filesystem (/files/artifacts)
-                                              ↓
-                                    PostgreSQL (build_jobs, binaries tables)
-```
+| Axis         | Values                           |
+|--------------|----------------------------------|
+| Optimization | O0, O1, O2, O3                   |
+| Variant      | debug (`-g`), release, stripped   |
+| **Cells**    | **4 × 3 = 12 per job**           |
 
-## Current Status
+Each cell goes through three phases:
 
-**Implemented:**
-- ✅ Core build logic (`build_logic.py`)
-- ✅ Build system detection
-- ✅ Compiler flag injection
-- ✅ Binary discovery and filtering
-- ✅ Debug info verification
-- ✅ Manifest generation
-- ✅ Worker scaffold (`worker.py`)
+1. **Compile** — `gcc -c` per `.c` file → `.o` objects
+2. **Link** — `gcc *.o` → single ELF executable
+3. **Strip** — `strip` on the linked binary (stripped variant only)
 
-**TODO (Placeholders only):**
-- ⏳ Redis queue consumption (scaffold exists)
-- ⏳ PostgreSQL integration (update job status, insert binaries)
-- ⏳ Artifact storage to local filesystem
-- ⏳ Full build execution pipeline
+## Toolchain (locked)
 
-## Usage (When Implemented)
+| Tool     | Version  | Source               |
+|----------|----------|----------------------|
+| GCC      | 12.2.0   | Debian Bookworm apt  |
+| binutils | system   | Debian Bookworm apt  |
+| strip    | system   | (from binutils)      |
 
-Submit jobs via the main API (not this worker directly):
+Base cflags: `-std=c11 -Wno-error -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer`
 
-```bash
-# Submit build job (via reforge API)
-curl -X POST http://localhost:8080/builder/build \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo_url": "https://github.com/DaveGamble/cJSON",
-    "commit_ref": "master",
-    "compiler": "gcc",
-    "optimizations": ["O0", "O2", "O3"]
-  }'
+Link-flag allowlist: `["-lm"]`
 
-# Worker picks up job from Redis and builds
-```
 
-## Development
+## BuildReceipt Schema
 
-```bash
-# Build Docker image
-docker build -t reforge-builder .
+Defined in `receipt.py`. Key models:
 
-# Run locally (for testing build logic)
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install -r requirements.txt
-python main.py
-```
+- **BuildReceipt** — top-level envelope
+- **SourceIdentity** — file list, snapshot SHA-256, entry type
+- **ToolchainIdentity** — gcc/binutils/strip versions, OS, kernel, arch
+- **ProfileV1** — base cflags, variant deltas, link libs
+- **BuildCell** — per optimization×variant result
+- **CompilePhase / LinkPhase / StripPhase** — command, status, duration
+- **ArtifactMeta** — path, SHA-256, size, ELF metadata, debug presence
+- **BuildFlag** — 9 flags (BUILD_FAILED, TIMEOUT, NO_ARTIFACT, etc.)
 
-## Compiler Versions
 
-- **GCC**: 11.4.0
-- **Clang**: 14.0.0
+## Non-Goals (v1)
 
-Pinned for reproducibility in experiments.
+- No Clang, Rust, or cross-compilation
+- No git/repo builds (synthetic multi-file only)
+- No DWARF interpretation (builder checks presence only)
+- No decompiler integration
+- No Windows or macOS targets

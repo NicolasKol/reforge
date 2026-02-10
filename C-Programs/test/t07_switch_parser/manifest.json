@@ -1,0 +1,8 @@
+{
+    "name": "t07_switch_parser",
+    "description": "Switch-heavy token parser across multiple files. Dense switch tables exercise GCC's jump-table generation and stress oracle_dwarf's ability to map branch targets back to source-level cases.",
+    "files": ["parser.h", "lexer.c", "evaluator.c", "main.c"],
+    "stress_tags": ["switch_heavy", "jump_tables", "enum_dispatch"],
+    "oracle_pressure": "Dense switch statements compile to jump tables at O1+. Oracle must correlate DW_AT_low_pc ranges within a single function to individual case labels. Enum-typed dispatching adds DW_TAG_enumeration_type cross-referencing.",
+    "requires_libm": false
+}

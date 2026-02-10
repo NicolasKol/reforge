@@ -1,0 +1,8 @@
+{
+    "name": "t05_fptr_callbacks",
+    "description": "Function-pointer dispatch tables and callback chains across TUs. Forces oracle_dwarf to resolve indirect call targets and track DW_TAG_pointer_type → DW_TAG_subroutine_type chains.",
+    "files": ["dispatch.h", "handlers.c", "dispatcher.c", "main.c"],
+    "stress_tags": ["fptr_callbacks", "indirect_calls", "typedef_fptr"],
+    "oracle_pressure": "Indirect calls via function-pointer tables produce no direct DW_AT_call_target. Oracle must correlate DW_TAG_pointer_type with DW_TAG_subroutine_type to reconstruct possible call edges.",
+    "requires_libm": false
+}

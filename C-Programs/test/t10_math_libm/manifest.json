@@ -1,0 +1,8 @@
+{
+    "name": "t10_math_libm",
+    "description": "Math-heavy module requiring -lm linkage. Uses sin, cos, sqrt, pow, log, exp, floor, ceil. Tests the builder's link-flag allowlist and libm dependency handling.",
+    "files": ["mathutil.h", "trig.c", "stats.c", "main.c"],
+    "stress_tags": ["math_libm", "floating_point", "libm_link"],
+    "oracle_pressure": "Floating-point operations may be replaced with SSE/AVX intrinsics at O2+. Oracle must handle DW_TAG_base_type for 'double' vs register-based representations, and recognize that libm calls may be inlined by the compiler at higher O-levels.",
+    "requires_libm": true
+}

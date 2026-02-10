@@ -1,0 +1,8 @@
+{
+    "name": "t11_mixed_stress",
+    "description": "Combined stress test merging function pointers, static name collisions, recursion, loops, and string formatting into one project. The 'worst case' for both builder and oracle_dwarf.",
+    "files": ["mixed.h", "engine.c", "plugins.c", "reporting.c", "main.c"],
+    "stress_tags": ["mixed_stress", "fptr_callbacks", "static_dup_names", "recursion", "loop_heavy", "string_heavy"],
+    "oracle_pressure": "Combines every stress category: indirect calls via plugin table, static name collisions in engine vs plugins, recursive tree walks, loop-heavy processing, and string-heavy reporting. Maximum cross-TU DWARF complexity.",
+    "requires_libm": false
+}

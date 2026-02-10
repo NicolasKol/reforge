@@ -1,0 +1,8 @@
+{
+  "name": "t01_crossfile_calls",
+  "description": "Cross-file function calls between separate compilation units with a shared header helper.",
+  "files": ["common.h", "arrays.c", "strings.c", "main.c"],
+  "stress_tags": ["cross_file_calls", "separate_tus", "shared_header_helper"],
+  "oracle_pressure": "Multiple .c files calling each other: oracle must resolve dominant file per function. Header-defined helper used from both .c files may show MULTI_FILE_RANGE at O1+",
+  "requires_libm": false
+}

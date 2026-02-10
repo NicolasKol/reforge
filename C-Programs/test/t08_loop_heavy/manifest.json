@@ -1,0 +1,8 @@
+{
+    "name": "t08_loop_heavy",
+    "description": "Loop-intensive numerical code with nested loops, reductions, and array sweeps. Stresses GCC loop optimizations (unrolling, vectorization, strength reduction) which reshape the CFG differently across O-levels.",
+    "files": ["compute.h", "matrix.c", "sorting.c", "main.c"],
+    "stress_tags": ["loop_heavy", "nested_loops", "array_sweep", "vectorization_risk"],
+    "oracle_pressure": "Heavily optimized loops at O2/O3 produce vectorized or unrolled code whose DWARF line info becomes sparse. Oracle must handle gaps in DW_AT_decl_line coverage within loop bodies and correlate optimized basic blocks back to source loops.",
+    "requires_libm": false
+}

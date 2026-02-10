@@ -1,0 +1,8 @@
+{
+  "name": "t04_static_dup_names",
+  "description": "Multiple .c files define static functions with identical names. Tests oracle's ability to distinguish functions by CU/DIE when names collide.",
+  "files": ["common.h", "module_a.c", "module_b.c", "module_c.c", "main.c"],
+  "stress_tags": ["static_dup_names", "separate_tus", "name_collision"],
+  "oracle_pressure": "Identical DW_AT_name across CUs: oracle must key by DIE offset, not name alone. Static functions with same name but different implementations per TU. LLM difficulty: stripped binary will have no names, but debug variant shows collisions",
+  "requires_libm": false
+}

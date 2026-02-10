@@ -130,7 +130,7 @@ services:
       retries: 3
 
   # =============================================================================
-  # Builder Worker - C/C++ Project Builds
+  # Builder Worker - C Builds
   # =============================================================================
   builder-worker:
     build:

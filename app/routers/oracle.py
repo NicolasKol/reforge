@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 ARTIFACTS_ROOT = Path("/files/artifacts/synthetic")
-OUTPUT_ROOT = Path("/files/oracle_output")
 
 
 # =============================================================================
@@ -53,6 +52,7 @@ class OracleRunRequest(BaseModel):
 class OracleBinaryResult(BaseModel):
     """Result for a single binary."""
     binary_path: str
+    test_case: str
     verdict: str
     reasons: List[str]
     function_counts: dict
@@ -93,7 +93,11 @@ async def run_oracle_endpoint(request: OracleRunRequest):
 
     Expected filesystem layout (produced by builder-worker)::
 
-        /files/artifacts/synthetic/<name>/gcc_<opt>/debug
+        /files/artifacts/synthetic/<name>/<opt>/debug/bin/<name>
+
+    Oracle outputs are written alongside the binary::
+
+        /files/artifacts/synthetic/<name>/<opt>/debug/oracle/
 
     Returns a summary with per-binary verdicts and function counts.
     """
@@ -112,20 +116,26 @@ async def run_oracle_endpoint(request: OracleRunRequest):
         optimization_level=opt,
     )
 
-    # Walk every test-case directory looking for gcc_<opt>/debug binaries
+    # Walk every test-case directory
     for case_dir in sorted(root.iterdir()):
         if not case_dir.is_dir():
             continue
 
-        # Builder produces:  <name>/gcc_O0/debug, <name>/gcc_O1/debug, …
-        debug_binary = case_dir / f"gcc_{opt}" / "debug"
+        case_name = case_dir.name
+
+        # Builder produces:  <name>/<opt>/debug/bin/<name>
+        debug_binary = case_dir / opt / "debug" / "bin" / case_name
         if not debug_binary.exists():
+            logger.debug("No debug binary at %s, skipping", debug_binary)
             continue
 
         binary_path = str(debug_binary)
+
+        # Oracle outputs nest under the artifact tree:
+        #   <name>/<opt>/debug/oracle/
         out_dir = None
         if request.write_outputs:
-            out_dir = OUTPUT_ROOT / case_dir.name / f"gcc_{opt}"
+            out_dir = case_dir / opt / "debug" / "oracle"
 
         try:
             report, functions = run_oracle(
@@ -138,6 +148,7 @@ async def run_oracle_endpoint(request: OracleRunRequest):
             response.results.append(
                 OracleBinaryResult(
                     binary_path=binary_path,
+                    test_case=case_name,
                     verdict="REJECT",
                     reasons=["DWARF_PARSE_ERROR"],
                     function_counts={"total": 0, "accept": 0, "warn": 0, "reject": 0},
@@ -149,6 +160,7 @@ async def run_oracle_endpoint(request: OracleRunRequest):
 
         result = OracleBinaryResult(
             binary_path=binary_path,
+            test_case=case_name,
             verdict=report.verdict,
             reasons=report.reasons,
             function_counts=report.function_counts.model_dump(),
