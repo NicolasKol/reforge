@@ -10,6 +10,7 @@ The system is composed of domain-specific workers coordinated through a FastAPI 
 |-----------|------|
 | **API** (`app/`) | HTTP interface; routes requests to workers |
 | **Builder** (`workers/builder/`) | Compiles C source to ELF across optimization levels and variants (debug, release, stripped) |
+| **Oracle TS** (`workers/oracle_ts/`) | Parses preprocessed C translation units with tree-sitter; indexes functions and structural nodes with stable identifiers |
 | **Oracle DWARF** (`workers/oracle_dwarf/`) | Extracts function boundaries, line mappings, and per-function verdicts from debug DWARF info |
 | **Ghidra** (`workers/ghidra/`) | Headless decompilation of stripped binaries |
 | **LLM** (`workers/llm/`) | LLM-assisted source recovery and analysis |
