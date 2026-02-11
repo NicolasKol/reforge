@@ -1,18 +1,21 @@
 """
-Synthetic ELF Builder — builder_synth_v1
+Synthetic ELF Builder — builder_synth_v2
 
 Compile synthetic C source files to ELF binaries with GCC across multiple
 optimization levels and three variants (debug / release / stripped).
+Additionally emit preprocessed translation units (.i) via gcc -E.
 
 Produces:
   - ELF binaries on disk in a stable layout
-  - Per-phase logs (compile/link/strip stdout+stderr)
+  - Preprocessed .i files (one per TU, optimization-independent)
+  - Per-phase logs (compile/link/strip/preprocess stdout+stderr)
   - A single BuildReceipt JSON for provenance
 
-Scope: "Compile synthetic C to ELF with GCC; emit artifacts + receipt.
+Scope: "Compile synthetic C to ELF with GCC; emit artifacts,
+        preprocessed TUs, and receipt.
         No DWARF semantics, no alignment, no repo builds."
 
-See LOCK.md for the full scope contract.
+See LOCK_v2.md for the full scope contract.
 """
 from __future__ import annotations
 
@@ -47,6 +50,8 @@ from receipt import (
     LinkPhase,
     OptLevel,
     PhaseStatus,
+    PreprocessPhase,
+    PreprocessUnitResult,
     ProfileV1,
     RequestedMatrix,
     SourceFile,
@@ -340,6 +345,107 @@ class SyntheticBuildJob:
     # -----------------------------------------------------------------
     # Build phases
     # -----------------------------------------------------------------
+
+    def _preprocess_units(
+        self,
+        c_files: List[str],
+    ) -> PreprocessPhase:
+        """
+        Preprocess each .c → .i via gcc -E (optimization-independent).
+
+        Outputs land in artifacts_dir/preprocess/{stem}.i.
+        Preprocessing failure is non-fatal — logged but does not abort.
+        """
+        pp_dir = self.artifacts_dir / "preprocess"
+        pp_dir.mkdir(exist_ok=True)
+        logs_dir = pp_dir / "logs"
+        logs_dir.mkdir(exist_ok=True)
+
+        # Minimal cflags: language standard + include paths only
+        pp_cflags = ["-std=c11"]
+        cmd_template = "gcc -std=c11 -I src -E <source> -o preprocess/<stem>.i"
+
+        units: List[PreprocessUnitResult] = []
+        failed = 0
+
+        for c_rel in c_files:
+            src_path = self.src_dir / c_rel
+            stem = Path(c_rel).stem
+            out_path = pp_dir / f"{stem}.i"
+
+            cmd = ["gcc"] + pp_cflags + [
+                "-I", str(self.src_dir),
+                "-E", str(src_path),
+                "-o", str(out_path),
+            ]
+
+            stdout_file = logs_dir / f"preprocess.{stem}.stdout"
+            stderr_file = logs_dir / f"preprocess.{stem}.stderr"
+
+            t0 = time.monotonic()
+            stdout_content = ""
+            stderr_content = ""
+            try:
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(self.workspace_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                )
+                duration = int((time.monotonic() - t0) * 1000)
+                exit_code = result.returncode
+                stdout_content = result.stdout
+                stderr_content = result.stderr
+            except subprocess.TimeoutExpired:
+                duration = int((time.monotonic() - t0) * 1000)
+                exit_code = -1
+                stderr_content = f"TIMEOUT after {self.timeout}s"
+            except Exception as e:
+                duration = int((time.monotonic() - t0) * 1000)
+                exit_code = -1
+                stderr_content = str(e)
+
+            # Only write log files if they have content
+            stdout_rel = None
+            stderr_rel = None
+            if stdout_content:
+                stdout_file.write_text(stdout_content)
+                stdout_rel = stdout_file.relative_to(self.artifacts_dir).as_posix()
+            if stderr_content:
+                stderr_file.write_text(stderr_content)
+                stderr_rel = stderr_file.relative_to(self.artifacts_dir).as_posix()
+
+            if exit_code != 0:
+                failed += 1
+
+            # Hash the .i output if it was produced
+            out_sha = None
+            out_rel = f"preprocess/{stem}.i"
+            if exit_code == 0 and out_path.exists():
+                out_sha = hash_file(out_path)
+
+            units.append(PreprocessUnitResult(
+                source_path_rel=c_rel,
+                output_path_rel=out_rel,
+                output_sha256=out_sha,
+                exit_code=exit_code,
+                stdout_path_rel=stdout_rel,
+                stderr_path_rel=stderr_rel,
+                duration_ms=duration,
+            ))
+
+        pp_status = PhaseStatus.SUCCESS
+        if failed == len(c_files):
+            pp_status = PhaseStatus.FAILED
+        elif failed > 0:
+            pp_status = PhaseStatus.FAILED
+
+        return PreprocessPhase(
+            command_template=cmd_template,
+            units=units,
+            status=pp_status,
+        )
 
     def _compile_units(
         self,
@@ -710,6 +816,14 @@ class SyntheticBuildJob:
         # 2. Capture toolchain
         toolchain = capture_toolchain()
 
+        # 2.5 Preprocess phase (v2): gcc -E per TU, optimization-independent
+        c_files_early = source_identity.entry_c_files
+        preprocess_phase = self._preprocess_units(c_files_early)
+        if preprocess_phase.status != PhaseStatus.SUCCESS:
+            logger.warning(
+                "Preprocess phase had failures (non-fatal), continuing build"
+            )
+
         # 3. Determine build matrix
         opts_to_build = [target_opt] if target_opt else self.optimizations
         variants_to_build = [target_variant] if target_variant else self.variants
@@ -737,9 +851,11 @@ class SyntheticBuildJob:
         # 6. Assemble receipt
         finished_at = now_iso()
 
-        # Hash LOCK.md if available
+        # Hash LOCK_v2.md if available (fall back to LOCK.md)
         lock_hash = None
-        lock_path = Path(__file__).parent / "LOCK.md"
+        lock_path = Path(__file__).parent / "LOCK_v2.md"
+        if not lock_path.exists():
+            lock_path = Path(__file__).parent / "LOCK.md"
         if lock_path.exists():
             lock_hash = hash_file(lock_path)
 
@@ -758,6 +874,7 @@ class SyntheticBuildJob:
                 variants=[v.value for v in self.variants],
                 compile_policy=compile_policy,
             ),
+            preprocess=preprocess_phase,
             builds=cells,
         )
 
