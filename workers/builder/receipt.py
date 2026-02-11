@@ -210,6 +210,33 @@ class StripPhase(BaseModel):
 
 
 # =============================================================================
+# Preprocess Phase (v2)
+# =============================================================================
+
+class PreprocessUnitResult(BaseModel):
+    """Result of preprocessing a single .c → .i translation unit."""
+    source_path_rel: str
+    output_path_rel: str
+    output_sha256: Optional[str] = None
+    exit_code: int
+    stdout_path_rel: Optional[str] = None
+    stderr_path_rel: Optional[str] = None
+    duration_ms: int = 0
+
+
+class PreprocessPhase(BaseModel):
+    """
+    Preprocess phase: all .c → .i via gcc -E.
+
+    Top-level in the receipt (not per-cell) because preprocessing
+    is optimization-independent.
+    """
+    command_template: str
+    units: List[PreprocessUnitResult] = []
+    status: PhaseStatus = PhaseStatus.SUCCESS
+
+
+# =============================================================================
 # ELF Metadata & Artifact
 # =============================================================================
 
@@ -264,10 +291,10 @@ class BuildCell(BaseModel):
 
 class BuilderInfo(BaseModel):
     """Identifies the builder package."""
-    name: str = "builder_synth_v1"
-    version: str = "v1"
+    name: str = "builder_synth_v2"
+    version: str = "v2"
     profile_id: str = "linux-x86_64-elf-gcc-c"
-    lock_text_hash: Optional[str] = None  # sha256 of LOCK.md
+    lock_text_hash: Optional[str] = None  # sha256 of LOCK_v2.md
 
 
 class JobInfo(BaseModel):
@@ -299,6 +326,7 @@ class BuildReceipt(BaseModel):
     toolchain: ToolchainIdentity
     profile: ProfileV1 = ProfileV1()
     requested: RequestedMatrix
+    preprocess: Optional[PreprocessPhase] = None  # v2: gcc -E results
     builds: List[BuildCell] = []
 
     def compute_status(self) -> str:

@@ -1,5 +1,5 @@
 # Inspector Box Cheatsheet
-Purpose: **Manually inspect Assemblage artifacts (ELF/DWARF) inside Docker**, learn what the artifacts contain, and validate whether they are suitable for ground-truth alignment.
+Purpose: **Manually inspect artifacts (ELF/DWARF) inside Docker**, learn what the artifacts contain, and validate whether they are suitable for ground-truth alignment.
 
 This is a **learning + validation tool**, not automation yet.
 

@@ -17,6 +17,9 @@ COPY app/ /code/app/
 # Copy oracle_dwarf worker package (importable via PYTHONPATH)
 COPY workers/oracle_dwarf/ /code/oracle_dwarf/
 
+# Copy oracle_ts worker package (importable via PYTHONPATH)
+COPY workers/oracle_ts/ /code/oracle_ts/
+
 ENV PYTHONPATH=/code
 
 EXPOSE 8080

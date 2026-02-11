@@ -4,12 +4,17 @@ Shared pytest fixtures for oracle_dwarf tests.
 Provides on-the-fly compilation of minimal C programs using gcc,
 producing deterministic ELF binaries for testing.
 
-If gcc is not available (e.g. on Windows dev machines), tests that
-require compiled fixtures are skipped automatically.
+Requirements:
+  - gcc must be available
+  - gcc must produce ELF binaries (Linux/WSL), not PE executables (native Windows)
+
+Tests are automatically skipped on Windows. Use WSL or Docker instead.
 """
 import hashlib
+import platform
 import shutil
 import subprocess
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -49,11 +54,58 @@ SINGLE_FUNC_C = textwrap.dedent("""\
 
 
 def _gcc_available() -> bool:
+    """Check if gcc is in PATH."""
     return shutil.which("gcc") is not None
 
 
+def _gcc_produces_elf() -> bool:
+    """Test if gcc produces ELF binaries (Linux/WSL) vs PE executables (Windows).
+    
+    Returns False on native Windows where MSYS2/MinGW gcc produces PE format.
+    """
+    if not _gcc_available():
+        return False
+    
+    # Quick platform check - native Windows cannot produce ELF
+    if platform.system() == "Windows":
+        # Could be WSL - test by compiling
+        pass
+    
+    # Compile a minimal test program
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_c = Path(tmpdir) / "test.c"
+        test_out = Path(tmpdir) / "test_out"
+        test_c.write_text("int main() { return 0; }")
+        
+        try:
+            subprocess.run(
+                ["gcc", str(test_c), "-o", str(test_out)],
+                check=True,
+                capture_output=True,
+                timeout=10
+            )
+            
+            # Check both with and without .exe extension
+            if test_out.exists():
+                binary = test_out
+            elif test_out.with_suffix(".exe").exists():
+                binary = test_out.with_suffix(".exe")
+            else:
+                return False
+            
+            # Check magic bytes: ELF = 0x7F 'E' 'L' 'F', PE = 'M' 'Z'
+            magic = binary.read_bytes()[:4]
+            return magic[:4] == b'\x7fELF'
+            
+        except Exception:
+            return False
+
+
 def _compile(source: str, output: Path, opt: str = "O0", strip: bool = False) -> Path:
-    """Compile C source to an ELF binary with gcc."""
+    """Compile C source to an ELF binary with gcc.
+    
+    Returns the actual path to the compiled binary.
+    """
     src_file = output.with_suffix(".c")
     src_file.write_text(source)
     cmd = [
@@ -66,16 +118,34 @@ def _compile(source: str, output: Path, opt: str = "O0", strip: bool = False) ->
         "-o", str(output),
     ]
     subprocess.run(cmd, check=True, capture_output=True, timeout=30)
+    
+    # Handle potential .exe extension on Windows
+    if not output.exists() and output.with_suffix(".exe").exists():
+        output = output.with_suffix(".exe")
+    
     if strip:
         subprocess.run(["strip", "--strip-all", str(output)], check=True, timeout=10)
+    
     return output
 
 
 @pytest.fixture(scope="session")
 def gcc_ok():
-    """Skip tests if gcc is not available."""
+    """Skip tests if gcc is not available or doesn't produce ELF binaries.
+    
+    Native Windows with MSYS2/MinGW is not supported because gcc produces
+    PE executables, not ELF binaries. Use WSL or Docker instead.
+    """
     if not _gcc_available():
-        pytest.skip("gcc not available")
+        pytest.skip("gcc not available - install gcc to run these tests")
+    
+    if not _gcc_produces_elf():
+        pytest.skip(
+            "gcc does not produce ELF binaries (likely native Windows). "
+            "oracle_dwarf requires ELF binaries with DWARF debug info. "
+            "Run tests in WSL: 'wsl' then 'cd /mnt/c/...' and run pytest, "
+            "or use Docker: 'docker compose run --rm api pytest ...'"
+        )
 
 
 @pytest.fixture(scope="session")

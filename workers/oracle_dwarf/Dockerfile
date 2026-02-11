@@ -11,6 +11,7 @@ WORKDIR /app
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir pytest pytest-cov
 
 # Copy package into /app/oracle_dwarf/ so imports work as oracle_dwarf.*
 COPY . /app/oracle_dwarf/

@@ -34,37 +34,25 @@ API docs at: `http://localhost:8080/docs`
 
 ## Running tests
 
+**Requirements**: Linux environment with GCC (tests require ELF binaries with DWARF debug info)
+
+### Using Docker (recommended):
+
+```bash
+cd workers/oracle_dwarf
+docker build -t oracle-dwarf-test .
+docker run --rm oracle-dwarf-test
+```
+
+### On Linux:
+
 ```bash
 cd workers/oracle_dwarf
 pip install -r requirements.txt
 pytest tests/ -v
 ```
 
-Tests compile small C programs on-the-fly with `gcc` and verify invariant properties (valid ranges, non-empty line spans, correct verdicts).
+Tests compile small C programs on-the-fly with `gcc` and verify invariant properties (valid ranges, non-empty line spans, correct verdicts). 
 
-## Package structure
+**Note**: Native Windows is not supported because the oracle requires ELF binaries with DWARF debug info. Windows gcc (MinGW/MSYS2) produces PE executables. Tests will skip automatically with instructions to use Docker.
 
-```
-oracle_dwarf/
-├── __init__.py          # Version constants
-├── runner.py            # Top-level orchestration
-├── LOCK.md              # v0 scope contract
-├── core/
-│   ├── elf_reader.py    # ELF validation + metadata
-│   ├── dwarf_loader.py  # DWARFInfo + CU iteration
-│   ├── function_index.py # Subprogram DIE enumeration + range normalization
-│   └── line_mapper.py   # .debug_line intersection + dominant file
-├── policy/
-│   ├── profile.py       # Support profile descriptor
-│   └── verdict.py       # ACCEPT/WARN/REJECT logic
-├── io/
-│   ├── schema.py        # Pydantic output models
-│   └── writer.py        # JSON serialization
-└── tests/
-    ├── conftest.py       # gcc fixture compilation
-    ├── test_gate.py      # Binary-level gate tests
-    ├── test_functions.py # Function enumeration invariants
-    └── test_linespan.py  # Line span invariants
-```
-
-The oracle router is registered in `app/routers/oracle.py` as part of the central reforge API.
