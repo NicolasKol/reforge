@@ -28,6 +28,7 @@ volumes/
 # =============================================================================
 experiments/runs/
 experiments/notebooks/.ipynb_checkpoints/
+figures/oracle_analysis
 
 # =============================================================================
 # Build Artifacts

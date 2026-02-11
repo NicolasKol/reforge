@@ -15,6 +15,7 @@ from oracle_dwarf.core.function_index import index_functions
 from oracle_dwarf.core.line_mapper import compute_line_span
 from oracle_dwarf.io.schema import (
     FunctionCounts,
+    LineRowEntry,
     OracleFunctionEntry,
     OracleFunctionsOutput,
     OracleReport,
@@ -121,6 +122,22 @@ def run_oracle(
                     # apply policy
                     fv, freasons = judge_function(fe, span, profile)
 
+                    # Build line_rows for ACCEPT/WARN (v0.2).
+                    # REJECT functions have no ranges so line_rows stays empty.
+                    func_line_rows: list[LineRowEntry] = []
+                    func_file_row_counts: dict[str, int] = {}
+                    if fv in (Verdict.ACCEPT, Verdict.WARN):
+                        func_line_rows = sorted(
+                            [
+                                LineRowEntry(file=f, line=l, count=c)
+                                for (f, l), c in span.line_rows.items()
+                            ],
+                            key=lambda r: (r.file, r.line),
+                        )
+                        func_file_row_counts = dict(
+                            sorted(span.file_row_counts.items())
+                        )
+
                     entry = OracleFunctionEntry(
                         function_id=fe.function_id,
                         die_offset=hex(fe.die_offset),
@@ -136,6 +153,8 @@ def run_oracle(
                         line_min=span.line_min,
                         line_max=span.line_max,
                         n_line_rows=span.n_line_rows,
+                        line_rows=func_line_rows,
+                        file_row_counts=func_file_row_counts,
                         verdict=fv.value,
                         reasons=freasons,
                     )

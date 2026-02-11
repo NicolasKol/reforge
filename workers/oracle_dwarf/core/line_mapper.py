@@ -46,6 +46,12 @@ class LineSpan:
     # All files that contributed rows (for MULTI_FILE_RANGE detection)
     file_row_counts: Dict[str, int] = field(default_factory=dict)
 
+    # Per-(file, line) hit counts — multiset of DWARF line evidence.
+    # Each key is (file_path, line_number), value is the count of
+    # state-machine rows mapping to that pair.  Added in schema v0.2
+    # to support join_dwarf_ts without re-parsing the binary.
+    line_rows: Dict[Tuple[str, int], int] = field(default_factory=dict)
+
     @property
     def is_empty(self) -> bool:
         return self.n_line_rows == 0
@@ -188,6 +194,9 @@ def compute_line_span(
     line_min = min(dominant_lines)
     line_max = max(dominant_lines)
 
+    # Per-(file, line) multiset — preserves granular evidence for join
+    line_row_counts: Counter = Counter(matched)
+
     return LineSpan(
         dominant_file=dominant_file,
         dominant_file_ratio=round(ratio, 4),
@@ -195,4 +204,5 @@ def compute_line_span(
         line_max=line_max,
         n_line_rows=total,
         file_row_counts=dict(file_counts),
+        line_rows=dict(line_row_counts),
     )
