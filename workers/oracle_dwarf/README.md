@@ -24,7 +24,7 @@ POST http://localhost:8080/oracle/run
 Content-Type: application/json
 
 {
-  "optimization_level": "O0"
+  "optimization_level": "O2"
 }
 ```
 

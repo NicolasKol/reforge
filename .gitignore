@@ -14,7 +14,7 @@
 # =============================================================================
 # Data Directories (Large Files / Binaries)
 # =============================================================================
-data/
+# data/
 docker/local-files/
 binaries/
 
@@ -28,6 +28,7 @@ volumes/
 # =============================================================================
 experiments/runs/
 experiments/notebooks/.ipynb_checkpoints/
+figures/oracle_analysis
 
 # =============================================================================
 # Build Artifacts

@@ -20,6 +20,9 @@ COPY workers/oracle_dwarf/ /code/oracle_dwarf/
 # Copy oracle_ts worker package (importable via PYTHONPATH)
 COPY workers/oracle_ts/ /code/oracle_ts/
 
+# Copy join_dwarf_ts worker package (importable via PYTHONPATH)
+COPY workers/join_dwarf_ts/ /code/join_dwarf_ts/
+
 ENV PYTHONPATH=/code
 
 EXPOSE 8080

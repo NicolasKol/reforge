@@ -46,6 +46,12 @@ class LineSpan:
     # All files that contributed rows (for MULTI_FILE_RANGE detection)
     file_row_counts: Dict[str, int] = field(default_factory=dict)
 
+    # Per-(file, line) hit counts — multiset of DWARF line evidence.
+    # Each key is (file_path, line_number), value is the count of
+    # state-machine rows mapping to that pair.  Added in schema v0.2
+    # to support join_dwarf_ts without re-parsing the binary.
+    line_rows: Dict[Tuple[str, int], int] = field(default_factory=dict)
+
     @property
     def is_empty(self) -> bool:
         return self.n_line_rows == 0
@@ -91,6 +97,19 @@ def _resolve_file(
     header = line_program.header
     version = header.get("version", 4)
     file_entries = header.get("file_entry", [])
+    include_dirs = header.get("include_directory", [])
+
+    return _resolve_file_impl(file_index, version, file_entries, include_dirs, comp_dir)
+
+
+def _resolve_file_impl(
+    file_index: int,
+    version: int,
+    file_entries: list,
+    include_dirs: list,
+    comp_dir: Optional[str],
+) -> str:
+    """Core resolution logic, shared by _resolve_file and resolve_file_index."""
 
     if not file_entries:
         return f"<unknown file {file_index}>"
@@ -113,7 +132,6 @@ def _resolve_file(
 
     # entry.dir_index references the include_directory list
     dir_index = entry.dir_index
-    include_dirs = header.get("include_directory", [])
 
     dir_path = ""
     if dir_index > 0 and include_dirs:
@@ -136,6 +154,36 @@ def _resolve_file(
         full = str(PurePosixPath(comp_dir) / full)
 
     return full
+
+
+def resolve_file_index(
+    file_index: int,
+    cu: "CompileUnit",
+    dwarf: "DWARFInfo",
+    comp_dir: Optional[str],
+) -> Optional[str]:
+    """
+    Public API: resolve a DW_AT_decl_file index to a path string.
+
+    Returns None if the line program is unavailable or the index is invalid.
+    Uses the same resolution logic as the line mapper's internal _resolve_file.
+    """
+    line_program = dwarf.line_program_for_CU(cu)
+    if line_program is None:
+        return None
+
+    header = line_program.header
+    version = header.get("version", 4)
+    file_entries = header.get("file_entry", [])
+    include_dirs = header.get("include_directory", [])
+
+    if not file_entries:
+        return None
+
+    result = _resolve_file_impl(file_index, version, file_entries, include_dirs, comp_dir)
+    if result.startswith("<unknown"):
+        return None
+    return result
 
 
 def _in_ranges(address: int, ranges: List[AddressRange]) -> bool:
@@ -188,6 +236,9 @@ def compute_line_span(
     line_min = min(dominant_lines)
     line_max = max(dominant_lines)
 
+    # Per-(file, line) multiset — preserves granular evidence for join
+    line_row_counts: Counter = Counter(matched)
+
     return LineSpan(
         dominant_file=dominant_file,
         dominant_file_ratio=round(ratio, 4),
@@ -195,4 +246,5 @@ def compute_line_span(
         line_max=line_max,
         n_line_rows=total,
         file_row_counts=dict(file_counts),
+        line_rows=dict(line_row_counts),
     )

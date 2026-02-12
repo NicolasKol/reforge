@@ -12,9 +12,10 @@ from typing import Tuple
 from oracle_dwarf.core.elf_reader import ElfMeta, read_elf
 from oracle_dwarf.core.dwarf_loader import DwarfLoader
 from oracle_dwarf.core.function_index import index_functions
-from oracle_dwarf.core.line_mapper import compute_line_span
+from oracle_dwarf.core.line_mapper import compute_line_span, resolve_file_index
 from oracle_dwarf.io.schema import (
     FunctionCounts,
+    LineRowEntry,
     OracleFunctionEntry,
     OracleFunctionsOutput,
     OracleReport,
@@ -121,12 +122,51 @@ def run_oracle(
                     # apply policy
                     fv, freasons = judge_function(fe, span, profile)
 
+                    # Build line_rows for ACCEPT/WARN (v0.2).
+                    # REJECT functions have no ranges so line_rows stays empty.
+                    func_line_rows: list[LineRowEntry] = []
+                    func_file_row_counts: dict[str, int] = {}
+                    if fv in (Verdict.ACCEPT, Verdict.WARN):
+                        func_line_rows = sorted(
+                            [
+                                LineRowEntry(file=f, line=l, count=c)
+                                for (f, l), c in span.line_rows.items()
+                            ],
+                            key=lambda r: (r.file, r.line),
+                        )
+                        func_file_row_counts = dict(
+                            sorted(span.file_row_counts.items())
+                        )
+
+                    # Resolve decl_file from index (v0.3)
+                    resolved_decl_file = None
+                    decl_missing_reason = None
+                    if fe.decl_file_index is not None:
+                        resolved_decl_file = resolve_file_index(
+                            fe.decl_file_index,
+                            cu_handle.cu,
+                            loader.dwarf,
+                            cu_handle.comp_dir,
+                        )
+                        if resolved_decl_file is None:
+                            decl_missing_reason = "FILE_INDEX_UNRESOLVABLE"
+                    else:
+                        decl_missing_reason = "NO_DECL_FILE_ATTR"
+
+                    cu_id = f"cu{cu_handle.cu_offset:#x}"
+
                     entry = OracleFunctionEntry(
                         function_id=fe.function_id,
                         die_offset=hex(fe.die_offset),
                         cu_offset=hex(fe.cu_offset),
                         name=fe.name,
                         linkage_name=fe.linkage_name,
+                        decl_file=resolved_decl_file,
+                        decl_line=fe.decl_line,
+                        decl_column=fe.decl_column,
+                        comp_dir=cu_handle.comp_dir,
+                        cu_id=cu_id,
+                        decl_missing_reason=decl_missing_reason,
                         ranges=[
                             RangeModel(low=hex(r.low), high=hex(r.high))
                             for r in fe.ranges
@@ -136,6 +176,8 @@ def run_oracle(
                         line_min=span.line_min,
                         line_max=span.line_max,
                         n_line_rows=span.n_line_rows,
+                        line_rows=func_line_rows,
+                        file_row_counts=func_file_row_counts,
                         verdict=fv.value,
                         reasons=freasons,
                     )

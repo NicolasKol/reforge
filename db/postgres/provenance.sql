@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS synthetic_code (
 
     -- Identity
     name VARCHAR(255) UNIQUE NOT NULL,
-    test_category VARCHAR(100) NOT NULL,  -- arrays, loops, strings, functions, etc.
+    test_category VARCHAR(256) NOT NULL,  -- arrays, loops, strings, functions, etc.
     language VARCHAR(50) DEFAULT 'c',     -- only 'c' in v1
 
     -- Source snapshot (multi-file)
