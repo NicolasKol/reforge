@@ -14,6 +14,8 @@ The system is composed of domain-specific workers coordinated through a FastAPI 
 | **Oracle DWARF** (`workers/oracle_dwarf/`) | Extracts function boundaries, line mappings, and per-function verdicts from debug DWARF info |
 | **Ghidra** (`workers/ghidra/`) | Headless decompilation of stripped binaries |
 | **LLM** (`workers/llm/`) | LLM-assisted source recovery and analysis |
+| **Join Oracle** (`workers/oracle_align/`) | Joins the syntactic (`oracle_ts`) and binary (`oracle_dwarf`) oracles to surface alignment mismatches and provenance discrepancies |
+| **Data Module** (`data/`) | Bundles evaluation schemas, metrics helpers, and reproducible notebooks that quantify ambiguity, counts, quality, uncertainty, and transition behavior |
 
 Infrastructure: PostgreSQL (provenance), Redis (job queue), n8n (orchestration).
 
@@ -26,6 +28,10 @@ curl http://localhost:8080/health
 ```
 
 API documentation is available at `http://localhost:8080/docs`.
+
+## Evaluation Notebooks
+
+The data module drives a series of notebooks — `candidate_ambiguity`, `counts`, `data_quality`, `opt_induced_uncertainty`, and `transitions` — that walk through evaluator-friendly metrics for ambiguity, match counts, key stability, optimization-induced uncertainty, and transition behavior between verdicts.
 
 ## Scope and Contracts
 
