@@ -94,6 +94,12 @@ class AlignmentPair(BaseModel):
     reasons: List[str] = []
     candidates: List[CandidateScore] = []
 
+    # Source declaration identity (oracle_dwarf v0.3 / joiner v0.2)
+    decl_file: Optional[str] = None
+    decl_line: Optional[int] = None
+    decl_column: Optional[int] = None
+    comp_dir: Optional[str] = None
+
 
 class NonTargetEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -102,6 +108,12 @@ class NonTargetEntry(BaseModel):
     name: Optional[str] = None
     dwarf_verdict: str = "REJECT"
     dwarf_reasons: List[str] = []
+
+    # Source declaration identity (oracle_dwarf v0.3 / joiner v0.2)
+    decl_file: Optional[str] = None
+    decl_line: Optional[int] = None
+    decl_column: Optional[int] = None
+    comp_dir: Optional[str] = None
 
 
 class AlignmentPairsOutput(BaseModel):

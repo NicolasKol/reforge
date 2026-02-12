@@ -105,3 +105,29 @@ class AlignmentReason(str, Enum):
 
     # ── Gap tag (emitted by select_best, not in any worker enum) ─────────
     PC_LINE_GAP                   = "PC_LINE_GAP"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Declaration identity quality  (data module v1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class DeclMissingReason(str, Enum):
+    """Reason why ``decl_file`` could not be resolved."""
+
+    NO_DECL_FILE_ATTR     = "NO_DECL_FILE_ATTR"
+    FILE_INDEX_UNRESOLVABLE = "FILE_INDEX_UNRESOLVABLE"
+
+
+class StableKeyQuality(str, Enum):
+    """Quality level of the stable cross-optimization function key.
+
+    HIGH       — ``(test_case, decl_file, decl_line, decl_column, name)``
+    MEDIUM     — ``(test_case, decl_file, decl_line, name)`` (no column)
+    LOW        — ``(test_case, decl_file, name)`` (no line)
+    UNRESOLVED — ``(test_case, "<decl_missing>", dwarf_function_id)``
+    """
+
+    HIGH       = "HIGH"
+    MEDIUM     = "MEDIUM"
+    LOW        = "LOW"
+    UNRESOLVED = "UNRESOLVED"

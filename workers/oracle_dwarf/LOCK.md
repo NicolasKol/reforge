@@ -1,9 +1,9 @@
-# oracle_dwarf v0 — Scope Lock
+# oracle_dwarf v0.1 — Scope Lock
 
 > **Package name:** `oracle_dwarf`
-> **Oracle version:** v0
-> **Support profile:** `linux-x86_64-gcc-O0O1`
-> **Schema version:** 0.1
+> **Oracle version:** v0.1
+> **Support profile:** `linux-x86_64-gcc-O0O1O2O3`
+> **Schema version:** 0.3
 
 ---
 
@@ -15,14 +15,14 @@ This package is **not** a ground-truth reconstructor. It emits behavioral alignm
 
 ---
 
-## Support profile (v0)
+## Support profile (v0.1)
 
 | Dimension          | Value                     |
-|--------------------|---------------------------|
+|-----------------------|---------------------------|
 | Target platform    | linux-x86_64              |
 | Binary format      | ELF                       |
 | Toolchain          | gcc                       |
-| Optimization levels| `-O0`, `-O1`              |
+| Optimization levels| `-O0`, `-O1`, `-O2`, `-O3`|
 
 Anything outside the profile is best-effort at most and may be REJECT.
 
@@ -124,7 +124,21 @@ The following are explicitly identified as future work and are **not** part of v
 | `oracle_types`        | Type graph resolution (DW_TAG_base_type, structs)   |
 | `oracle_inline`       | Inline chain resolution (DW_TAG_inlined_subroutine) |
 | `oracle_align`        | Full source-binary alignment engine (joins all)      |
-| Profile: O2/O3        | Support for aggressive optimization levels           |
 | Profile: clang        | Cross-compiler support                               |
 
 Each future package must define its own lock before implementation begins.
+
+---
+
+## Version History
+
+### v0.1 (February 2026)
+- **Expanded optimization level support**: Added O2 and O3 to supported optimization levels
+- Profile ID changed from `linux-x86_64-gcc-O0O1` to `linux-x86_64-gcc-O0O1O2O3`
+- No schema changes; core oracle logic already handles higher optimization levels
+- Removed "Profile: O2/O3" from future work (now supported)
+
+### v0 (Initial)
+- Initial locked scope: linux-x86_64-gcc with O0 and O1 support
+- DWARF-based function extraction and verdict system
+- Schema version 0.3 with source declaration identity fields

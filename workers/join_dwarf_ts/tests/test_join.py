@@ -125,7 +125,7 @@ class TestRunJoin:
         )
         assert pairs_out.package_name == "join_dwarf_ts"
         assert pairs_out.joiner_version == "v0"
-        assert pairs_out.schema_version == "0.1"
+        assert pairs_out.schema_version == "0.2"
         assert report.package_name == "join_dwarf_ts"
 
     def test_every_pair_has_verdict(

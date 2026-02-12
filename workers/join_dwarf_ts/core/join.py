@@ -41,6 +41,7 @@ class DwarfFunctionInput:
     __slots__ = (
         "function_id", "name", "verdict", "reasons",
         "line_rows", "n_line_rows",
+        "decl_file", "decl_line", "decl_column", "comp_dir",
     )
 
     def __init__(
@@ -51,6 +52,10 @@ class DwarfFunctionInput:
         reasons: List[str],
         line_rows: Dict[Tuple[str, int], int],
         n_line_rows: int,
+        decl_file: Optional[str] = None,
+        decl_line: Optional[int] = None,
+        decl_column: Optional[int] = None,
+        comp_dir: Optional[str] = None,
     ):
         self.function_id = function_id
         self.name = name
@@ -58,6 +63,10 @@ class DwarfFunctionInput:
         self.reasons = reasons
         self.line_rows = line_rows
         self.n_line_rows = n_line_rows
+        self.decl_file = decl_file
+        self.decl_line = decl_line
+        self.decl_column = decl_column
+        self.comp_dir = comp_dir
 
 
 def _build_ts_function_map(
@@ -205,6 +214,10 @@ def run_join(
                 reasons=df.get("reasons", []),
                 line_rows=lr,
                 n_line_rows=df.get("n_line_rows", 0),
+                decl_file=df.get("decl_file"),
+                decl_line=df.get("decl_line"),
+                decl_column=df.get("decl_column"),
+                comp_dir=df.get("comp_dir"),
             ))
         else:
             non_targets.append(NonTargetEntry(
@@ -212,6 +225,10 @@ def run_join(
                 name=df.get("name"),
                 dwarf_verdict=verdict,
                 dwarf_reasons=df.get("reasons", []),
+                decl_file=df.get("decl_file"),
+                decl_line=df.get("decl_line"),
+                decl_column=df.get("decl_column"),
+                comp_dir=df.get("comp_dir"),
             ))
 
     # ── Join loop ────────────────────────────────────────────────────
@@ -303,6 +320,10 @@ def run_join(
             dwarf_function_id=dwarf_func.function_id,
             dwarf_function_name=dwarf_func.name,
             dwarf_verdict=dwarf_func.verdict,
+            decl_file=dwarf_func.decl_file,
+            decl_line=dwarf_func.decl_line,
+            decl_column=dwarf_func.decl_column,
+            comp_dir=dwarf_func.comp_dir,
             best_ts_func_id=best.ts_func_id if best else None,
             best_tu_path=best.tu_path if best else None,
             best_ts_function_name=best.function_name if best else None,

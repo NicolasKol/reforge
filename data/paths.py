@@ -23,10 +23,10 @@ from typing import List
 
 
 def discover_test_cases(root: Path) -> List[str]:
-    """Return sorted test-case directory names (those starting with ``t``)."""
+    """Return sorted test-case directory names."""
     return sorted(
         d.name for d in root.iterdir()
-        if d.is_dir() and d.name.startswith("t")
+        if d.is_dir()
     )
 
 

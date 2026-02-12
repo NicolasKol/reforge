@@ -37,8 +37,8 @@ class JoinRunRequest(BaseModel):
 
     optimization_level: str = Field(
         ...,
-        description="Optimization level: O0 or O1",
-        pattern=r"^O[01]$",
+        description="Optimization level: O0, O1, O2, or O3",
+        pattern=r"^O[0-3]$",
     )
     variant: str = Field(
         "debug",

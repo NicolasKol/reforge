@@ -47,8 +47,11 @@ class FunctionEntry:
     is_external: bool = False             # DW_AT_external
     is_inlined: bool = False              # DW_AT_inline (not resolved in v0)
 
-    decl_file: Optional[str] = None       # DW_AT_decl_file (index, resolved later)
-    decl_line: Optional[int] = None       # DW_AT_decl_line
+    decl_file_index: Optional[int] = None  # raw DW_AT_decl_file index (before resolution)
+    decl_file: Optional[str] = None        # resolved path from DW_AT_decl_file
+    decl_line: Optional[int] = None        # DW_AT_decl_line
+    decl_column: Optional[int] = None      # DW_AT_decl_column
+    decl_missing_reason: Optional[str] = None  # why decl_file is None
 
 
 def _decode_attr(die: DIE, attr_name: str) -> Optional[str]:
@@ -195,6 +198,14 @@ def index_functions(
         if "DW_AT_decl_line" in die.attributes:
             decl_line = die.attributes["DW_AT_decl_line"].value
 
+        decl_column = None
+        if "DW_AT_decl_column" in die.attributes:
+            decl_column = die.attributes["DW_AT_decl_column"].value
+
+        decl_file_index = None
+        if "DW_AT_decl_file" in die.attributes:
+            decl_file_index = die.attributes["DW_AT_decl_file"].value
+
         ranges = _normalize_ranges(die, cu, dwarf) if not is_decl else []
 
         fid = f"cu{cu_offset:#x}:die{die.offset:#x}"
@@ -210,7 +221,9 @@ def index_functions(
                 is_declaration=is_decl,
                 is_external=is_external,
                 is_inlined=is_inlined,
+                decl_file_index=decl_file_index,
                 decl_line=decl_line,
+                decl_column=decl_column,
             )
         )
 

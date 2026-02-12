@@ -31,6 +31,7 @@ from .enums import (
     OracleFunctionRejectReason,
     OracleFunctionWarnReason,
     OracleVerdict,
+    StableKeyQuality,
 )
 
 from .metrics import (
@@ -51,6 +52,7 @@ __all__ = [
     "OracleFunctionWarnReason",
     "AlignmentVerdict",
     "AlignmentReason",
+    "StableKeyQuality",
     # metrics
     "enrich_pairs",
     "compute_transitions",

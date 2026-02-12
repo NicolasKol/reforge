@@ -42,6 +42,14 @@ class OracleFunctionEntry(BaseModel):
     name: Optional[str] = None
     linkage_name: Optional[str] = None
 
+    # Source declaration identity (v0.3)
+    decl_file: Optional[str] = None
+    decl_line: Optional[int] = None
+    decl_column: Optional[int] = None
+    comp_dir: Optional[str] = None
+    cu_id: str = ""
+    decl_missing_reason: Optional[str] = None
+
     ranges: List[RangeModel] = Field(default_factory=list)
 
     dominant_file: Optional[str] = None

@@ -55,15 +55,17 @@ class OracleDataset:
         One row per oracle-accepted DWARF function that entered alignment.
 
         Columns: ``test_case, opt, dwarf_function_id, dwarf_function_name,
-        dwarf_verdict, verdict, overlap_ratio, overlap_count, total_count,
-        gap_count, reasons, candidates, best_tu_path, best_ts_func_id,
-        best_ts_function_name``
+        dwarf_function_name_norm, dwarf_verdict, verdict, overlap_ratio,
+        overlap_count, total_count, gap_count, reasons, candidates,
+        best_tu_path, best_ts_func_id, best_ts_function_name,
+        decl_file, decl_line, decl_column, comp_dir``
 
     non_targets : pd.DataFrame
         One row per oracle-rejected function (never entered alignment).
 
-        Columns: ``test_case, opt, dwarf_function_id, name, dwarf_verdict,
-        dwarf_reasons``
+        Columns: ``test_case, opt, dwarf_function_id, name, name_norm,
+        dwarf_verdict, dwarf_reasons, decl_file, decl_line, decl_column,
+        comp_dir``
 
     reports : pd.DataFrame
         One row per ``(test_case, opt)`` combination with aggregate verdict
@@ -157,6 +159,9 @@ def _flatten_report(
     # Flatten reason counts into ``reason_<key>`` columns
     for reason, count in alignment_report.reason_counts.items():
         row[f"reason_{reason}"] = count
+    # Flatten alignment thresholds into ``threshold_<key>`` columns
+    for key, val in alignment_report.thresholds.items():
+        row[f"threshold_{key}"] = val
     return row
 
 
@@ -168,11 +173,18 @@ def _flatten_pairs(
     nt_rows: List[Dict[str, Any]] = []
 
     for p in pairs_output.pairs:
+        # Normalize null names → stable placeholder
+        name_norm = (
+            p.dwarf_function_name
+            if p.dwarf_function_name is not None
+            else f"<anon@{p.dwarf_function_id}>"
+        )
         pair_rows.append({
             "test_case":             test_case,
             "opt":                   opt,
             "dwarf_function_id":     p.dwarf_function_id,
             "dwarf_function_name":   p.dwarf_function_name,
+            "dwarf_function_name_norm": name_norm,
             "dwarf_verdict":         p.dwarf_verdict,
             "verdict":               p.verdict,
             "overlap_ratio":         p.overlap_ratio,
@@ -184,16 +196,33 @@ def _flatten_pairs(
             "best_tu_path":          p.best_tu_path or "",
             "best_ts_func_id":       p.best_ts_func_id or "",
             "best_ts_function_name": p.best_ts_function_name or "",
+            # Source declaration identity
+            "decl_file":             p.decl_file,
+            "decl_line":             p.decl_line,
+            "decl_column":           p.decl_column,
+            "comp_dir":              p.comp_dir,
         })
 
     for nt in pairs_output.non_targets:
+        # Normalize null names → stable placeholder
+        name_norm = (
+            nt.name
+            if nt.name is not None
+            else f"<anon@{nt.dwarf_function_id}>"
+        )
         nt_rows.append({
             "test_case":         test_case,
             "opt":               opt,
             "dwarf_function_id": nt.dwarf_function_id,
             "name":              nt.name,
+            "name_norm":         name_norm,
             "dwarf_verdict":     nt.dwarf_verdict,
             "dwarf_reasons":     nt.dwarf_reasons,
+            # Source declaration identity
+            "decl_file":         nt.decl_file,
+            "decl_line":         nt.decl_line,
+            "decl_column":       nt.decl_column,
+            "comp_dir":          nt.comp_dir,
         })
 
     return pair_rows, nt_rows

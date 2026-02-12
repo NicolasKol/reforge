@@ -76,16 +76,16 @@ class TestLineSpan:
 
         # Report contract
         assert report.package_name == "oracle_dwarf"
-        assert report.oracle_version == "v0"
-        assert report.schema_version == "0.2"
-        assert report.profile_id == "linux-x86_64-gcc-O0O1"
+        assert report.oracle_version == "v0.1"
+        assert report.schema_version == "0.3"
+        assert report.profile_id == "linux-x86_64-gcc-O0O1O2O3"
         assert report.binary_sha256
         assert report.timestamp
 
         # Functions output contract
         assert functions.package_name == "oracle_dwarf"
-        assert functions.oracle_version == "v0"
-        assert functions.schema_version == "0.2"
+        assert functions.oracle_version == "v0.1"
+        assert functions.schema_version == "0.3"
         assert functions.binary_sha256 == report.binary_sha256
 
     # ── v0.2 line_rows tests ─────────────────────────────────────────

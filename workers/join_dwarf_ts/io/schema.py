@@ -41,6 +41,12 @@ class AlignmentPair(BaseModel):
     dwarf_function_name: Optional[str] = None
     dwarf_verdict: str = ""                    # ACCEPT | WARN (from DWARF)
 
+    # Source declaration identity (propagated from oracle_dwarf v0.3)
+    decl_file: Optional[str] = None
+    decl_line: Optional[int] = None
+    decl_column: Optional[int] = None
+    comp_dir: Optional[str] = None
+
     best_ts_func_id: Optional[str] = None
     best_tu_path: Optional[str] = None
     best_ts_function_name: Optional[str] = None
@@ -65,6 +71,12 @@ class NonTargetEntry(BaseModel):
     name: Optional[str] = None
     dwarf_verdict: str = "REJECT"
     dwarf_reasons: List[str] = Field(default_factory=list)
+
+    # Source declaration identity (propagated from oracle_dwarf v0.3)
+    decl_file: Optional[str] = None
+    decl_line: Optional[int] = None
+    decl_column: Optional[int] = None
+    comp_dir: Optional[str] = None
 
 
 # ── Pair counts ──────────────────────────────────────────────────────────────

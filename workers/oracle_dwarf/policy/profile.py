@@ -29,11 +29,11 @@ class Profile:
 
     @classmethod
     def v0(cls) -> "Profile":
-        """The locked v0 profile: linux-x86_64-gcc-O0O1."""
+        """The locked v0 profile: linux-x86_64-gcc-O0O1O2O3."""
         return cls(
-            profile_id="linux-x86_64-gcc-O0O1",
+            profile_id="linux-x86_64-gcc-O0O1O2O3",
             supported_compilers=frozenset({"gcc"}),
-            supported_opts=frozenset({"O0", "O1"}),
+            supported_opts=frozenset({"O0", "O1", "O2", "O3"}),
             exclude_paths=["/usr/include", "/usr/lib/gcc"],
             min_dominant_file_ratio=0.7,
             max_fragments_warn=2,
