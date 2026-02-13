@@ -116,6 +116,7 @@ services:
       - ARTIFACTS_PATH=/files/artifacts
     volumes:
       - ./local-files:/files
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
@@ -169,6 +170,24 @@ services:
     volumes:
       - ./local-files:/files
 
+  # =============================================================================
+  # Ghidra Headless Worker - Decompilation 
+  # =============================================================================
+  ghidra-worker:
+    image: blacktop/ghidra:latest
+    container_name: reforge-ghidra-worker
+    restart: unless-stopped
+    networks:
+      - reforge-network
+    volumes:
+      - ./local-files:/files
+      - ghidra_projects:/ghidra/projects
+      - ghidra_tmp:/tmp
+    environment:
+      - TZ=${TIMEZONE:-Europe/Berlin}
+    command: sleep infinity
+
+
 # =============================================================================
 # Volumes & Networks
 # =============================================================================
@@ -181,6 +200,10 @@ volumes:
     name: reforge_redis_data
   builder_workspace:
     name: reforge_builder_workspace
+  ghidra_projects:
+    name: reforge_ghidra_projects
+  ghidra_tmp:
+    name: reforge_ghidra_tmp
 
 networks:
   reforge-network:

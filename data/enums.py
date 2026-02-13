@@ -131,3 +131,105 @@ class StableKeyQuality(str, Enum):
     MEDIUM     = "MEDIUM"
     LOW        = "LOW"
     UNRESOLVED = "UNRESOLVED"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ghidra decompile verdicts  (analyzer_ghidra_decompile v1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GhidraBinaryVerdict(str, Enum):
+    """Binary-level verdict from Ghidra decompilation analysis."""
+
+    ACCEPT = "ACCEPT"
+    WARN   = "WARN"
+    REJECT = "REJECT"
+
+
+class GhidraFunctionVerdict(str, Enum):
+    """Per-function verdict from Ghidra decompiler output analysis."""
+
+    OK   = "OK"
+    WARN = "WARN"
+    FAIL = "FAIL"
+
+
+class GhidraDecompileStatus(str, Enum):
+    """Whether Ghidra successfully decompiled a function."""
+
+    OK   = "OK"
+    FAIL = "FAIL"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ghidra binary reject / warn reasons
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GhidraBinaryRejectReason(str, Enum):
+    """Reasons an entire binary is rejected by the Ghidra analyzer."""
+
+    NOT_ELF               = "NOT_ELF"
+    UNSUPPORTED_ARCH      = "UNSUPPORTED_ARCH"
+    GHIDRA_CRASH          = "GHIDRA_CRASH"
+    GHIDRA_TIMEOUT        = "GHIDRA_TIMEOUT"
+    NO_FUNCTIONS_FOUND    = "NO_FUNCTIONS_FOUND"
+    JSONL_PARSE_ERROR     = "JSONL_PARSE_ERROR"
+
+
+class GhidraBinaryWarnReason(str, Enum):
+    """Reasons a binary receives WARN from the Ghidra analyzer."""
+
+    HIGH_DECOMPILE_FAIL_RATE = "HIGH_DECOMPILE_FAIL_RATE"
+    GHIDRA_NONZERO_EXIT      = "GHIDRA_NONZERO_EXIT"
+    MISSING_SECTIONS          = "MISSING_SECTIONS"
+    PARTIAL_ANALYSIS          = "PARTIAL_ANALYSIS"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ghidra function warning taxonomy  (§5.2)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GhidraFunctionWarning(str, Enum):
+    """Taxonomy of per-function warnings in Ghidra decompilation (§5.2)."""
+
+    DECOMPILE_TIMEOUT              = "DECOMPILE_TIMEOUT"
+    UNKNOWN_CALLING_CONVENTION     = "UNKNOWN_CALLING_CONVENTION"
+    UNREACHABLE_BLOCKS_REMOVED     = "UNREACHABLE_BLOCKS_REMOVED"
+    BAD_INSTRUCTION_DATA           = "BAD_INSTRUCTION_DATA"
+    UNRESOLVED_INDIRECT_JUMP       = "UNRESOLVED_INDIRECT_JUMP"
+    OVERLAPPING_RANGES             = "OVERLAPPING_RANGES"
+    SWITCH_TABLE_INCOMPLETE        = "SWITCH_TABLE_INCOMPLETE"
+    NORETURN_MISMATCH              = "NORETURN_MISMATCH"
+    STRUCTURE_WARNING              = "STRUCTURE_WARNING"
+    DECOMPILER_INTERNAL_WARNING    = "DECOMPILER_INTERNAL_WARNING"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ghidra CFG / variable classification
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GhidraCfgCompleteness(str, Enum):
+    """CFG completeness level (§7.2)."""
+
+    HIGH   = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW    = "LOW"
+
+
+class GhidraVarKind(str, Enum):
+    """Variable kind as classified from Ghidra's HighSymbol."""
+
+    PARAM      = "PARAM"
+    LOCAL      = "LOCAL"
+    GLOBAL_REF = "GLOBAL_REF"
+    TEMP       = "TEMP"
+    UNKNOWN    = "UNKNOWN"
+
+
+class GhidraStorageClass(str, Enum):
+    """Storage class from Ghidra's VariableStorage."""
+
+    REGISTER = "REGISTER"
+    STACK    = "STACK"
+    MEMORY   = "MEMORY"
+    UNIQUE   = "UNIQUE"
+    UNKNOWN  = "UNKNOWN"
