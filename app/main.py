@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import builder, ghidra, join, llm, oracle, oracle_ts
+from app.routers import builder, ghidra, join, join_ghidra, llm, oracle, oracle_ts
 
 
 # =============================================================================
@@ -83,6 +83,7 @@ app.include_router(llm.router, prefix="/llm", tags=["llm"])
 app.include_router(oracle.router, prefix="/oracle", tags=["oracle"])
 app.include_router(oracle_ts.router, prefix="/oracle-ts", tags=["oracle-ts"])
 app.include_router(join.router, prefix="/join", tags=["join"])
+app.include_router(join_ghidra.router, prefix="/join-ghidra", tags=["join-ghidra"])
 
 
 if __name__ == "__main__":
