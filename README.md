@@ -12,10 +12,11 @@ The system is composed of domain-specific workers coordinated through a FastAPI 
 | **Builder** (`workers/builder/`) | Compiles C source to ELF across optimization levels and variants (debug, release, stripped) |
 | **Oracle TS** (`workers/oracle_ts/`) | Parses preprocessed C translation units with tree-sitter; indexes functions and structural nodes with stable identifiers |
 | **Oracle DWARF** (`workers/oracle_dwarf/`) | Extracts function boundaries, line mappings, and per-function verdicts from debug DWARF info |
-| **Ghidra** (`workers/ghidra/`) | Headless decompilation of stripped binaries |
+| **Analyzer Ghidra Decompile** (`workers/analyzer_ghidra_decompile/`) | Headless decompilation of stripped binaries; extracts CFG, calls, variables, and function metadata with policy-driven noise filtering and verdict assignment |
 | **LLM** (`workers/llm/`) | LLM-assisted source recovery and analysis |
-| **Join Oracle** (`workers/oracle_align/`) | Joins the syntactic (`oracle_ts`) and binary (`oracle_dwarf`) oracles to surface alignment mismatches and provenance discrepancies |
+| **Join Oracles to Ghidra Decompile** (`workers/join_oracles_to_ghidra_decompile/`) | Joins the syntactic (`oracle_ts`) and binary (`oracle_dwarf`) oracles with Ghidra decompilation output; surfaces alignment mismatches, provenance discrepancies, and build-context artifacts |
 | **Data Module** (`data/`) | Bundles evaluation schemas, metrics helpers, and reproducible notebooks that quantify ambiguity, counts, quality, uncertainty, and transition behavior |
+
 
 Infrastructure: PostgreSQL (provenance), Redis (job queue), n8n (orchestration).
 
