@@ -89,6 +89,7 @@ class RawSummary:
     decompile_ok: int = 0
     decompile_fail: int = 0
     analysis_options: str = "default"
+    image_base: Optional[int] = None  # Ghidra image base offset (PIE rebase)
 
 
 # ── Parsing ──────────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ def _parse_summary(d: Dict[str, Any]) -> RawSummary:
         decompile_ok=d.get("decompile_ok", 0),
         decompile_fail=d.get("decompile_fail", 0),
         analysis_options=d.get("analysis_options", "default"),
+        image_base=d.get("image_base"),
     )
 
 

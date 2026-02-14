@@ -207,7 +207,7 @@ async def run_all(request: AnalyzeRunRequest):
 
         /files/artifacts/synthetic/<name>/<opt>/stripped/ghidra_decompile/
 
-    Blocks until all binaries are processed (sequential).
+    Blocks until all binaries are processed (sequential, takes a good while).
     """
     opt = request.optimization_level
     root = Path(request.artifacts_root) if request.artifacts_root else ARTIFACTS_ROOT

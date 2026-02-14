@@ -600,6 +600,7 @@ def run_ghidra_decompile(
         java_version=summary.java_version,
         script_hash=script_hash,
         analysis_options=summary.analysis_options,
+        image_base=summary.image_base,
         binary_verdict=binary_verdict.value,
         reasons=binary_reasons,
         function_counts=counts,

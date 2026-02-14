@@ -28,6 +28,14 @@ COPY workers/join_dwarf_ts/ /code/join_dwarf_ts/
 
 # Copy analyzer_ghidra_decompile worker package (importable via PYTHONPATH)
 COPY workers/analyzer_ghidra_decompile/ /code/analyzer_ghidra_decompile/
+        
+# Copy join_ghidra worker package (importable via PYTHONPATH)
+COPY workers/join_oracles_to_ghidra_decompile/ /code/join_oracles_to_ghidra_decompile/
+
+# Copy minimal data/ module (only enums + paths, no pandas-heavy loader)
+COPY data/enums.py /code/data/enums.py
+COPY data/paths.py /code/data/paths.py
+RUN echo '"""Minimal data package stub for container."""' > /code/data/__init__.py
 
 ENV PYTHONPATH=/code
 

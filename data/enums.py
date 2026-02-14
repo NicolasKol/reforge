@@ -233,3 +233,39 @@ class GhidraStorageClass(str, Enum):
     MEMORY   = "MEMORY"
     UNIQUE   = "UNIQUE"
     UNKNOWN  = "UNKNOWN"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ghidra join match kinds  (join_oracles_to_ghidra_decompile v1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GhidraMatchKind(str, Enum):
+    """Result of DWARF→Ghidra function mapping by PC-range overlap.
+
+    JOINED_STRONG — ≥ 90 % of DWARF range bytes overlap a single Ghidra func.
+    JOINED_WEAK   — 30–89 % overlap.
+    MULTI_MATCH   — multiple Ghidra candidates within ε of the best overlap.
+    NO_MATCH      — no Ghidra function body overlaps the DWARF range.
+    NO_RANGE      — DWARF ranges missing / unusable; join not attempted.
+    """
+
+    JOINED_STRONG = "JOINED_STRONG"
+    JOINED_WEAK   = "JOINED_WEAK"
+    MULTI_MATCH   = "MULTI_MATCH"
+    NO_MATCH      = "NO_MATCH"
+    NO_RANGE      = "NO_RANGE"
+
+
+class VarJoinVerdict(str, Enum):
+    """Verdict for DWARF→Ghidra variable mapping (future — v1 stub).
+
+    MATCH      — exactly one Ghidra variable shares the same storage identity.
+    ALIAS      — multiple Ghidra variables share the same storage identity.
+    DISAPPEAR  — DWARF storage identity exists, no Ghidra variable has it.
+    UNSCOPED   — DWARF storage identity missing / optimized out.
+    """
+
+    MATCH     = "MATCH"
+    ALIAS     = "ALIAS"
+    DISAPPEAR = "DISAPPEAR"
+    UNSCOPED  = "UNSCOPED"

@@ -218,6 +218,9 @@ class GhidraReport(BaseModel):
     script_hash: Optional[str] = None  # SHA256 of ExportDecompJsonl.java
     analysis_options: str = "default"
 
+    # Image base — Ghidra may rebase PIE (ET_DYN) binaries; 0 for non-PIE
+    image_base: Optional[int] = None
+
     # Binary verdict (§4)
     binary_verdict: str          # ACCEPT | WARN | REJECT
     reasons: List[str] = Field(default_factory=list)

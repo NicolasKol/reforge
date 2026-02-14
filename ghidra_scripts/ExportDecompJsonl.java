@@ -326,6 +326,12 @@ public class ExportDecompJsonl extends GhidraScript {
             summary.addProperty("decompile_fail", decompileFail);
             summary.addProperty("analysis_options", "default");
 
+            // Image base — critical for PIE (ET_DYN) rebase correction.
+            // Ghidra loads PIE binaries at 0x100000 by default; this lets
+            // downstream consumers normalise addresses back to ELF VAs.
+            summary.addProperty("image_base",
+                currentProgram.getImageBase().getOffset());
+
             w.write(gson.toJson(summary));
             w.newLine();
 
