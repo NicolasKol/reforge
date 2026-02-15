@@ -29,6 +29,8 @@ def check_invariants(
     violations.extend(_check_overlap_ratio_bounds(rows))
     violations.extend(_check_no_range_has_no_ghidra(rows))
     violations.extend(_check_exclusion_consistency(rows))
+    violations.extend(_check_quality_weight_formula(rows))
+    violations.extend(_check_match_kind_ratio_consistency(rows))
     if violations:
         log.warning("Invariant violations detected: %d", len(violations))
     else:
@@ -93,6 +95,56 @@ def _check_exclusion_consistency(
         msg = f"Ineligible without exclusion_reason: {bad}"
         log.warning("INVARIANT: %s", msg)
         return [{"check": "exclusion_reason_present", "ids": bad, "message": msg}]
+    return []
+
+
+def _check_quality_weight_formula(
+    rows: List[JoinedFunctionRow],
+) -> List[Dict[str, Any]]:
+    """quality_weight must equal overlap_ratio / n_candidates for MATCH rows."""
+    _QW_TOL = 1e-6
+    bad = []
+    for r in rows:
+        if (
+            r.align_verdict == "MATCH"
+            and r.align_n_candidates is not None
+            and r.align_n_candidates >= 1
+            and r.align_overlap_ratio is not None
+        ):
+            expected = r.align_overlap_ratio / r.align_n_candidates
+            if abs(r.quality_weight - expected) > _QW_TOL:
+                bad.append((
+                    r.dwarf_function_id,
+                    r.quality_weight,
+                    expected,
+                ))
+    if bad:
+        msg = f"quality_weight != overlap_ratio/n_candidates: {bad}"
+        log.warning("INVARIANT: %s", msg)
+        return [{"check": "qw_formula", "ids": bad, "message": msg}]
+    return []
+
+
+def _check_match_kind_ratio_consistency(
+    rows: List[JoinedFunctionRow],
+) -> List[Dict[str, Any]]:
+    """ghidra_match_kind must be consistent with pc_overlap_ratio thresholds."""
+    _EPS = 0.001
+    bad = []
+    for r in rows:
+        mk = r.ghidra_match_kind
+        ratio = r.pc_overlap_ratio
+
+        if mk == "JOINED_STRONG" and ratio < 0.9 - _EPS:
+            bad.append((r.dwarf_function_id, mk, ratio))
+        elif mk == "JOINED_WEAK" and (
+            ratio < 0.3 - _EPS or ratio >= 0.9 + _EPS
+        ):
+            bad.append((r.dwarf_function_id, mk, ratio))
+    if bad:
+        msg = f"match_kind inconsistent with pc_overlap_ratio: {bad}"
+        log.warning("INVARIANT: %s", msg)
+        return [{"check": "match_kind_ratio", "ids": bad, "message": msg}]
     return []
 
 

@@ -476,6 +476,7 @@ def compute_reason_shift(
     opt_b: str = "O1",
     *,
     top_k: Optional[int] = None,
+    averaging: str = "micro",
 ) -> pd.DataFrame:
     """Compute alignment-reason distribution shift between two opt levels.
 
@@ -498,13 +499,23 @@ def compute_reason_shift(
     top_k
         If set, keep only the *top_k* reasons by max share across both
         levels and fold the remainder into an ``Other`` row.
+    averaging
+        ``"micro"`` (default) — sum all counts across test cases per opt
+        level, then compute shares.  Large test cases dominate.
+
+        ``"macro"`` — compute per-test-case shares first, then average
+        across test cases.  Each test case contributes equally regardless
+        of function count.
     """
+    if averaging not in ("micro", "macro"):
+        raise ValueError(f"averaging must be 'micro' or 'macro', got '{averaging}'")
+
     reason_cols = [c for c in df_report.columns if c.startswith("reason_")]
     if not reason_cols:
         log.warning("No reason_* columns found in df_report")
         return pd.DataFrame()
 
-    # Aggregate counts per opt level
+    # Aggregate counts per opt level (always micro — used for count columns)
     by_opt = df_report.groupby("opt")[reason_cols].sum()
 
     for opt in (opt_a, opt_b):
@@ -514,16 +525,34 @@ def compute_reason_shift(
     counts_a = by_opt.loc[opt_a]
     counts_b = by_opt.loc[opt_b]
 
-    # Shares (%) — denominated by *number of aligned pairs*, not by
-    # total reason-tag events.  Because a single pair can carry multiple
-    # reason tags, shares can sum to > 100%.  This makes each share a
-    # "prevalence rate" (fraction of pairs affected by this reason).
     pair_cols = ["match", "ambiguous", "no_match"]
-    pairs_per_opt = df_report.groupby("opt")[pair_cols].sum().sum(axis=1)
-    total_a = pairs_per_opt.get(opt_a, 1) or 1
-    total_b = pairs_per_opt.get(opt_b, 1) or 1
-    share_a = counts_a / total_a * 100
-    share_b = counts_b / total_b * 100
+
+    if averaging == "micro":
+        # Shares (%) — denominated by *number of aligned pairs*, not by
+        # total reason-tag events.  Because a single pair can carry multiple
+        # reason tags, shares can sum to > 100%.  This makes each share a
+        # "prevalence rate" (fraction of pairs affected by this reason).
+        pairs_per_opt = df_report.groupby("opt")[pair_cols].sum().sum(axis=1)
+        total_a = pairs_per_opt.get(opt_a, 1) or 1
+        total_b = pairs_per_opt.get(opt_b, 1) or 1
+        share_a = counts_a / total_a * 100
+        share_b = counts_b / total_b * 100
+
+    else:  # macro
+        # Per-test-case shares, then average across test cases.
+        # Each test case contributes equally regardless of function count.
+        tc_groups = df_report.groupby(["test_case", "opt"])
+        tc_reasons = tc_groups[reason_cols].sum()
+        tc_pairs = tc_groups[pair_cols].sum().sum(axis=1).replace(0, 1)
+
+        tc_shares = tc_reasons.div(tc_pairs, axis=0) * 100
+
+        # Average per-test-case shares within each opt level
+        tc_shares = tc_shares.reset_index()
+        opt_avg = tc_shares.groupby("opt")[reason_cols].mean()
+
+        share_a = opt_avg.loc[opt_a] if opt_a in opt_avg.index else pd.Series(0.0, index=reason_cols)
+        share_b = opt_avg.loc[opt_b] if opt_b in opt_avg.index else pd.Series(0.0, index=reason_cols)
 
     # Build result DataFrame
     result = pd.DataFrame({

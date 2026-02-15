@@ -53,6 +53,53 @@ SINGLE_FUNC_C = textwrap.dedent("""\
 """)
 
 
+# Multi-function source designed to exercise higher optimization levels.
+# __attribute__((noinline)) prevents GCC from inlining the function bodies,
+# so they remain present as DW_TAG_subprogram DIEs even at -O2/-O3.
+# The loop + conditional in complex_loop encourages the compiler to emit
+# DW_AT_ranges (hot/cold block splitting) at -O2 and above.
+MULTI_FUNC_C = textwrap.dedent("""\
+    #include <stdio.h>
+
+    __attribute__((noinline))
+    int accumulate(const int *arr, int n) {
+        int total = 0;
+        for (int i = 0; i < n; i++) {
+            total += arr[i];
+        }
+        return total;
+    }
+
+    __attribute__((noinline))
+    int complex_loop(int n) {
+        int sum = 0;
+        for (int i = 0; i < n; i++) {
+            if (i % 7 == 0) {
+                /* cold branch — may be split at -O2+ */
+                sum += i * 3;
+            } else {
+                sum += i;
+            }
+        }
+        return sum;
+    }
+
+    __attribute__((noinline))
+    int simple_add(int a, int b) {
+        return a + b;
+    }
+
+    int main(void) {
+        int data[] = {1, 2, 3, 4, 5};
+        int a = accumulate(data, 5);
+        int c = complex_loop(a);
+        int s = simple_add(a, c);
+        printf("result=%d\\n", s);
+        return 0;
+    }
+""")
+
+
 def _gcc_available() -> bool:
     """Check if gcc is in PATH."""
     return shutil.which("gcc") is not None
@@ -185,3 +232,23 @@ def not_elf(tmp_path) -> Path:
     p = tmp_path / "not_an_elf"
     p.write_bytes(b"This is not an ELF file.\x00\x00\x00")
     return p
+
+
+# ── O2 / O3 fixtures (MULTI_FUNC_C) ─────────────────────────────────
+
+@pytest.fixture(scope="session")
+def multi_func_binary_O0(fixtures_dir) -> Path:
+    """Multi-function C program compiled at -O0 (baseline for O2/O3 comparison)."""
+    return _compile(MULTI_FUNC_C, fixtures_dir / "multi_O0", opt="O0")
+
+
+@pytest.fixture(scope="session")
+def multi_func_binary_O2(fixtures_dir) -> Path:
+    """Multi-function C program compiled at -O2 with debug info."""
+    return _compile(MULTI_FUNC_C, fixtures_dir / "multi_O2", opt="O2")
+
+
+@pytest.fixture(scope="session")
+def multi_func_binary_O3(fixtures_dir) -> Path:
+    """Multi-function C program compiled at -O3 with debug info."""
+    return _compile(MULTI_FUNC_C, fixtures_dir / "multi_O3", opt="O3")

@@ -1,0 +1,8 @@
+{
+    "name": "t13_goto_labels",
+    "description": "Goto-heavy resource cleanup patterns and computed gotos. Exercises goto_statement, labeled_statement structural node indexing, and NONSTANDARD_EXTENSION_PATTERN detection for GCC computed-goto (&&label).",
+    "files": ["cleanup.h", "resource.c", "interpreter.c", "main.c"],
+    "stress_tags": ["goto_cleanup", "labeled_statement", "computed_goto", "nonstandard_extension"],
+    "oracle_pressure": "Standard goto-based cleanup patterns generate labeled_statement and goto_statement nodes that oracle_ts must index. Computed goto (GCC extension) produces an indirect branch through a label-address table: oracle must detect &&label as NONSTANDARD_EXTENSION_PATTERN. Cross-TU static helpers with identical label names (cleanup, done, fail) test label scoping in DWARF.",
+    "requires_libm": false
+}

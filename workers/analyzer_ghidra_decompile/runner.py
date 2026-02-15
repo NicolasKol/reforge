@@ -408,11 +408,14 @@ def run_ghidra_decompile(
         for d in pass1_data
         if d["rf"].size_bytes is not None and d["rf"].size_bytes > 0
     ]
-    size_p90 = (
-        sorted(all_sizes)[int(len(all_sizes) * profile.fat_function_size_percentile)]
-        if all_sizes
-        else 0
-    )
+    if len(all_sizes) >= 2:
+        import statistics
+        # quantiles(n=10) returns 9 cut points; index 8 is P90.
+        size_p90 = statistics.quantiles(all_sizes, n=10)[8]
+    elif all_sizes:
+        size_p90 = all_sizes[0]
+    else:
+        size_p90 = 0
 
     fat_thresholds = {
         "size_p90": size_p90,

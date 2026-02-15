@@ -1,5 +1,5 @@
 """
-BuildReceipt Schema — builder_synth_v1
+BuildReceipt Schema — builder_synth_v2
 
 Single authoritative JSON receipt per synthetic build job.
 Records exactly what was built, how, and with what outcome.

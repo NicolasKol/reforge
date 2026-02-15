@@ -155,6 +155,31 @@ EXTENSION_I = textwrap.dedent("""\
 
 EMPTY_I = ""
 
+DO_WHILE_I = textwrap.dedent("""\
+    # 1 "dowhile.c"
+
+    int sum_until(int n) {
+        int s = 0, i = 1;
+        do {
+            s += i;
+            i++;
+        } while (i <= n);
+        return s;
+    }
+""")
+
+GOTO_I = textwrap.dedent("""\
+    # 1 "goto.c"
+
+    int goto_example(int x) {
+        if (x < 0)
+            goto negative;
+        return x;
+    negative:
+        return -x;
+    }
+""")
+
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -218,4 +243,18 @@ def extension_i_file(tmp_i_dir: Path) -> Path:
 def empty_i_file(tmp_i_dir: Path) -> Path:
     p = tmp_i_dir / "empty.i"
     p.write_text(EMPTY_I)
+    return p
+
+
+@pytest.fixture
+def do_while_i_file(tmp_i_dir: Path) -> Path:
+    p = tmp_i_dir / "dowhile.i"
+    p.write_text(DO_WHILE_I)
+    return p
+
+
+@pytest.fixture
+def goto_i_file(tmp_i_dir: Path) -> Path:
+    p = tmp_i_dir / "goto.i"
+    p.write_text(GOTO_I)
     return p

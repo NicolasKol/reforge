@@ -1,7 +1,7 @@
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
 
 # =============================================================================
-# builder_synth_v1 — Synthetic ELF Builder
+# builder_synth_v2 — Synthetic ELF Builder
 # Profile: linux-x86_64-elf-gcc-c
 #
 # GCC only. No Clang, no C++, no git builds.

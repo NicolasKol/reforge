@@ -19,8 +19,9 @@ from analyzer_ghidra_decompile.core.raw_parser import RawVariable
 
 # ── Var kind classification (§6.2) ───────────────────────────────────
 
-# Temp name patterns (§9.4)
-_TEMP_NAME_RE = re.compile(
+# Temp name patterns (§9.4) — single source of truth for the package.
+# Imported by function_processor.py to avoid duplication (review R3/W9).
+TEMP_NAME_RE = re.compile(
     r"^(uVar|iVar|bVar|cVar|lVar|sVar|fVar|dVar|ppVar|pVar|auVar|abVar|aiVar)\d+$"
 )
 
@@ -44,7 +45,7 @@ def classify_var_kind(
         return "PARAM"
     if storage_class == "MEMORY" and addr_va is not None:
         return "GLOBAL_REF"
-    if storage_class == "UNIQUE" or _TEMP_NAME_RE.match(name):
+    if storage_class == "UNIQUE" or TEMP_NAME_RE.match(name):
         return "TEMP"
     return "LOCAL"
 
@@ -117,7 +118,7 @@ def is_temp_singleton(
     """
     if var_kind == "TEMP":
         return True
-    if _TEMP_NAME_RE.match(name) and storage_class == "UNIQUE":
+    if TEMP_NAME_RE.match(name) and storage_class == "UNIQUE":
         return True
     return False
 

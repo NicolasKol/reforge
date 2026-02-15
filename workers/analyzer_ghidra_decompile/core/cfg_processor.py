@@ -58,7 +58,8 @@ def process_cfg(
         })
 
     # Cyclomatic complexity: E - N + 2 for single-entry graphs
-    cyclomatic = edge_count - bb_count + 2 if bb_count > 0 else 0
+    # Clamped to 0: unresolved successors can drop edges below bb_count - 2.
+    cyclomatic = max(0, edge_count - bb_count + 2) if bb_count > 0 else 0
 
     # Indirect jump detection from warnings
     has_indirect = "UNRESOLVED_INDIRECT_JUMP" in warnings

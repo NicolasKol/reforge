@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -25,6 +25,17 @@ class FunctionCounts(BaseModel):
     accept: int = 0
     warn: int = 0
     reject: int = 0
+
+    @model_validator(mode="after")
+    def _check_total(self) -> "FunctionCounts":
+        expected = self.accept + self.warn + self.reject
+        if self.total != expected:
+            raise ValueError(
+                f"FunctionCounts.total={self.total} != "
+                f"accept({self.accept})+warn({self.warn})"
+                f"+reject({self.reject})={expected}"
+            )
+        return self
 
 
 class OracleReport(BaseModel):
@@ -73,7 +84,7 @@ class CandidateScore(BaseModel):
     function_name: Optional[str] = None
     context_hash: str = ""
     overlap_count: int = 0
-    overlap_ratio: float = 0.0
+    overlap_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     gap_count: int = 0
 
 
@@ -88,7 +99,7 @@ class AlignmentPair(BaseModel):
     best_ts_function_name: Optional[str] = None
     overlap_count: int = 0
     total_count: int = 0
-    overlap_ratio: float = 0.0
+    overlap_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     gap_count: int = 0
     verdict: str = ""
     reasons: List[str] = []

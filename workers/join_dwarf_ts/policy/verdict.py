@@ -35,7 +35,11 @@ class NoMatchReason(str, Enum):
     """Reason tags that may appear alongside NO_MATCH."""
 
     NO_CANDIDATES = "NO_CANDIDATES"
-    NO_OVERLAP = "NO_OVERLAP"
     LOW_OVERLAP_RATIO = "LOW_OVERLAP_RATIO"
-    BELOW_MIN_OVERLAP = "BELOW_MIN_OVERLAP"
     ORIGIN_MAP_MISSING = "ORIGIN_MAP_MISSING"
+
+
+class InformationalReason(str, Enum):
+    """Reason tags that may accompany any verdict (informational, not decisive)."""
+
+    PC_LINE_GAP = "PC_LINE_GAP"

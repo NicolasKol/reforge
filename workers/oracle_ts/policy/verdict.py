@@ -73,7 +73,7 @@ def gate_tu(
 
 def judge_function(
     func: TsFunctionEntry,
-    all_names: Set[str],
+    duplicate_names: Set[str],
     structural_nodes: List[StructuralNode],
     func_node,
     source_bytes: bytes,
@@ -86,13 +86,13 @@ def judge_function(
     ----------
     func : TsFunctionEntry
         The function entry to judge.
-    all_names : Set[str]
-        Set of all function names in the TU (for duplicate detection).
-        Pass a set where names that appear >1 time are included.
+    duplicate_names : Set[str]
+        Set of function names that appear more than once in the TU.
     structural_nodes : List[StructuralNode]
         Structural nodes already indexed for this function.
     func_node
-        The tree-sitter Node for this function_definition.
+        The tree-sitter Node for this function_definition, or None
+        if ``_find_func_node`` could not locate it.
     source_bytes : bytes
         Full TU source bytes.
     profile : TsProfile
@@ -115,7 +115,7 @@ def judge_function(
     # ── WARN checks ──────────────────────────────────────────────────
 
     # Duplicate function name
-    if func.name in all_names:
+    if func.name in duplicate_names:
         reasons.append(FunctionWarnReason.DUPLICATE_FUNCTION_NAME.value)
 
     # Deep nesting in structural nodes
@@ -125,8 +125,10 @@ def judge_function(
             break
 
     # Anonymous aggregates: search for unnamed struct/union/enum in
-    # the function subtree
-    if _has_anonymous_aggregate(func_node):
+    # the function subtree.  Only check when we have the actual
+    # function node — using root_node would scan the entire TU and
+    # produce false WARNs.
+    if func_node is not None and _has_anonymous_aggregate(func_node):
         reasons.append(FunctionWarnReason.ANONYMOUS_AGGREGATE_PRESENT.value)
 
     # Nonstandard extensions: best-effort __attribute__, __asm__, etc.

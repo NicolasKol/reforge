@@ -3,7 +3,8 @@ Structural node index — extract control-flow nodes within functions.
 
 Fixed allowlist of node types indexed per function_definition:
   compound_statement, if_statement, for_statement, while_statement,
-  switch_statement, return_statement.
+  do_statement, switch_statement, return_statement, goto_statement,
+  labeled_statement.
 """
 from __future__ import annotations
 
@@ -21,8 +22,11 @@ STRUCTURAL_NODE_TYPES = frozenset({
     "if_statement",
     "for_statement",
     "while_statement",
+    "do_statement",
     "switch_statement",
     "return_statement",
+    "goto_statement",
+    "labeled_statement",
 })
 
 

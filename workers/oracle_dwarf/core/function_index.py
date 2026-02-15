@@ -89,7 +89,7 @@ def _normalize_ranges(die: DIE, cu: CompileUnit, dwarf: DWARFInfo) -> List[Addre
                 high_pc = low_pc + high_attr.value
 
             if high_pc > low_pc:
-                return [AddressRange(low=low_pc, high=high_pc)]
+                return _merge_ranges([AddressRange(low=low_pc, high=high_pc)])
 
         # low_pc without high_pc — single-address function (unusual but valid)
         # Treat as zero-size; will be flagged MISSING_RANGE downstream.
@@ -141,9 +141,37 @@ def _normalize_ranges(die: DIE, cu: CompileUnit, dwarf: DWARFInfo) -> List[Addre
                         result.append(AddressRange(low=cu_base + b, high=cu_base + e))
                 except AttributeError:
                     continue
-        return result
+        return _merge_ranges(result)
 
     return []
+
+
+def _merge_ranges(ranges: List[AddressRange]) -> List[AddressRange]:
+    """Merge overlapping or adjacent [low, high) address ranges.
+
+    Prevents inflated total_range_bytes in downstream consumers
+    (e.g. join_oracles_to_ghidra_decompile) when a compiler emits
+    overlapping range-list entries.
+
+    Complexity: O(n log n) sort + O(n) merge pass.
+    """
+    if len(ranges) <= 1:
+        return ranges
+
+    by_low = sorted(ranges, key=lambda r: (r.low, r.high))
+    merged: List[AddressRange] = [by_low[0]]
+
+    for r in by_low[1:]:
+        prev = merged[-1]
+        if r.low <= prev.high:                     # overlap or adjacent
+            merged[-1] = AddressRange(
+                low=prev.low,
+                high=max(prev.high, r.high),
+            )
+        else:
+            merged.append(r)
+
+    return merged
 
 
 def _walk_dies(die: DIE) -> Iterator[DIE]:

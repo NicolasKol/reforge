@@ -165,7 +165,7 @@ def run_oracle_ts(
                 fe,
                 duplicate_names,
                 struct_nodes,
-                func_node if func_node is not None else pr.tree.root_node, #type: ignore
+                func_node,
                 pr.source_bytes,
                 profile,
             )

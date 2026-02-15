@@ -146,7 +146,35 @@ def run_join_oracles_ghidra(
         log.info("Eligibility exclusions: %s", excl_counts)
 
     # ── Stage 2: Build Ghidra function table ──────────────────────────────
-    image_base = ghidra_report.get("image_base") or 0
+    # image_base rebasing:  Ghidra reports its program image base via
+    # ``currentProgram.getImageBase().getOffset()``.  For **non-PIE**
+    # (ET_EXEC) binaries this equals the ELF's actual load address
+    # (typically 0x400000 on x86-64).  Both DWARF and Ghidra already use
+    # the same VA space, so subtracting would *destroy* the addresses.
+    #
+    # For **PIE** (ET_DYN) binaries the ELF has a 0-based VA space while
+    # Ghidra typically rebases to 0x100000.  In that case we must subtract
+    # Ghidra's image_base to align with DWARF's raw VAs.
+    #
+    # Heuristic: standard non-PIE x86-64 base is 0x400000.  If image_base
+    # equals that, no rebasing is needed.  Otherwise (PIE) subtract it.
+    raw_image_base = ghidra_report.get("image_base") or 0
+    _STANDARD_X86_64_BASE = 0x400000
+    if raw_image_base == _STANDARD_X86_64_BASE:
+        image_base = 0
+        log.info(
+            "Non-PIE binary detected (image_base=0x%x equals standard "
+            "x86-64 base) — no address rebasing needed",
+            raw_image_base,
+        )
+    else:
+        image_base = raw_image_base
+        log.info(
+            "PIE binary detected (image_base=0x%x) — rebasing Ghidra "
+            "addresses by subtracting image_base",
+            raw_image_base,
+        )
+
     ghidra_table, interval_index = build_ghidra_function_table(
         ghidra_funcs, ghidra_cfg, ghidra_vars,
         image_base=image_base,
@@ -182,6 +210,9 @@ def run_join_oracles_ghidra(
     if report_violations:
         log.warning("Report invariant violations: %d", len(report_violations))
         violations.extend(report_violations)
+
+    # Persist all violations in the report for audit trail
+    report.invariant_violations = violations
 
     log.info(
         "Join report: %d total, %d joined, %d HC (%.1f%%)",

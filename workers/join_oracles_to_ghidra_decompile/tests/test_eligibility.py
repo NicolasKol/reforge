@@ -37,7 +37,7 @@ from join_oracles_to_ghidra_decompile.io.schema import (
 
 class TestNoiseLists:
     def test_version_bumped(self):
-        assert NOISE_LIST_VERSION == "1.1"
+        assert NOISE_LIST_VERSION == "1.2"
 
     def test_all_aux_is_union(self):
         assert ALL_AUX_NAMES == AUX_INIT_FINI_NAMES | COMPILER_AUX_NAMES
@@ -204,6 +204,7 @@ def _make_row(**overrides) -> JoinedFunctionRow:
         builder_profile_id="gcc",
         dwarf_function_id="f1",
         ghidra_match_kind="JOINED_STRONG",
+        pc_overlap_ratio=0.95,
         is_high_confidence=False,
         eligible_for_join=True,
         eligible_for_gold=True,

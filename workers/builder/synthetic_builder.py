@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 PROFILE = ProfileV1()
 
 # Base flags baked into the profile
-BASE_CFLAGS = "-std=c11 -Wno-error -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"
+BASE_CFLAGS = "-std=c11 -Wno-error -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -no-pie"
 
 VARIANT_DELTAS: Dict[str, VariantDelta] = {
     "debug": VariantDelta(add_cflags=["-g"], dwarf_presence_check=True),
@@ -575,7 +575,7 @@ class SyntheticBuildJob:
             )
             return phase, None
 
-        cmd = ["gcc"] + [str(o) for o in objects] + ["-o", str(output_path)]
+        cmd = ["gcc", "-no-pie"] + [str(o) for o in objects] + ["-o", str(output_path)]
         # Append allowed link libs from profile
         cmd += PROFILE.link_libs
 

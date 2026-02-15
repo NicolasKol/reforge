@@ -273,3 +273,116 @@ class TestRunJoin:
             1 for p in pairs_out.pairs if p.verdict == JoinVerdict.MATCH.value
         )
         assert match_count > 0, "Expected at least one MATCH verdict"
+
+    def test_multi_tu_candidate_aggregation(
+        self, dwarf_report, ts_report
+    ):
+        """Candidates from two TUs are merged, sorted, and tie-detected."""
+        import textwrap
+
+        # Two .i files both include a header with the same function
+        i_a = textwrap.dedent("""\
+            # 1 "shared.h"
+            int helper(int x) {
+                return x + 1;
+            }
+            # 5 "a.c"
+            int fa(void) { return helper(1); }
+        """)
+        i_b = textwrap.dedent("""\
+            # 1 "shared.h"
+            int helper(int x) {
+                return x + 1;
+            }
+            # 5 "b.c"
+            int fb(void) { return helper(2); }
+        """)
+
+        # DWARF function points at shared.h lines 1-3
+        dwarf_functions = [{
+            "function_id": "0x100:0x0-0x20",
+            "name": "helper",
+            "verdict": "ACCEPT",
+            "reasons": [],
+            "n_line_rows": 3,
+            "line_rows": [
+                {"file": "shared.h", "line": 1, "count": 1},
+                {"file": "shared.h", "line": 2, "count": 1},
+                {"file": "shared.h", "line": 3, "count": 1},
+            ],
+        }]
+
+        # TS functions in both TUs covering the replicated header code
+        ts_functions = [
+            {
+                "ts_func_id": "a.c.i:1:3:hash_helper",
+                "name": "helper",
+                "context_hash": "SAME_HASH",
+                "start_line": 1, "end_line": 3,
+                "start_byte": 0, "end_byte": 50,
+                "verdict": "ACCEPT",
+            },
+            {
+                "ts_func_id": "b.c.i:1:3:hash_helper",
+                "name": "helper",
+                "context_hash": "SAME_HASH",
+                "start_line": 1, "end_line": 3,
+                "start_byte": 0, "end_byte": 50,
+                "verdict": "ACCEPT",
+            },
+        ]
+
+        ts_report_multi = dict(ts_report)
+        ts_report_multi["tu_reports"] = [
+            {"tu_path": "a.c.i", "tu_hash": "sha256:aaa", "function_count": 1},
+            {"tu_path": "b.c.i", "tu_hash": "sha256:bbb", "function_count": 1},
+        ]
+
+        profile = JoinProfile.v0()
+        pairs_out, report = run_join(
+            dwarf_functions=dwarf_functions,
+            dwarf_report=dwarf_report,
+            ts_functions=ts_functions,
+            ts_report=ts_report_multi,
+            i_contents={"a.c.i": i_a, "b.c.i": i_b},
+            profile=profile,
+        )
+
+        pair = pairs_out.pairs[0]
+        # Both TUs contribute candidates
+        assert len(pair.candidates) == 2
+        # Header replication should be detected → AMBIGUOUS
+        assert pair.verdict == JoinVerdict.AMBIGUOUS.value
+        assert "HEADER_REPLICATION_COLLISION" in pair.reasons
+
+    def test_multi_file_range_propagated(
+        self, dwarf_report, ts_functions, ts_report, i_contents
+    ):
+        """MULTI_FILE_RANGE in DWARF reasons → MULTI_FILE_RANGE_PROPAGATED."""
+        dwarf_functions = [{
+            "function_id": "0x1000:0x0-0x20",
+            "name": "add",
+            "verdict": "WARN",
+            "reasons": ["MULTI_FILE_RANGE"],
+            "dominant_file": "simple.c",
+            "dominant_file_ratio": 1.0,
+            "n_line_rows": 4,
+            "line_rows": [
+                {"file": "simple.c", "line": 3, "count": 1},
+                {"file": "simple.c", "line": 4, "count": 2},
+                {"file": "simple.c", "line": 5, "count": 1},
+            ],
+        }]
+
+        profile = JoinProfile.v0()
+        pairs_out, report = run_join(
+            dwarf_functions=dwarf_functions,
+            dwarf_report=dwarf_report,
+            ts_functions=ts_functions,
+            ts_report=ts_report,
+            i_contents=i_contents,
+            profile=profile,
+        )
+
+        pair = pairs_out.pairs[0]
+        assert "MULTI_FILE_RANGE_PROPAGATED" in pair.reasons

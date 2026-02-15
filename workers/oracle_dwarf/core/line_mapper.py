@@ -194,15 +194,43 @@ def _in_ranges(address: int, ranges: List[AddressRange]) -> bool:
     return False
 
 
+def build_cu_line_table(
+    cu: CompileUnit,
+    dwarf: DWARFInfo,
+) -> Optional[List[LineRow]]:
+    """Build the DWARF line table for a CU (public API for caching).
+
+    Returns the list of LineRow objects for the CU's line program,
+    or ``None`` if no line program exists.  The result can be passed
+    to ``compute_line_span`` via the *line_table* parameter so that
+    the state machine is replayed only once per CU rather than once
+    per function.
+    """
+    line_program = dwarf.line_program_for_CU(cu)
+    if line_program is None:
+        return None
+    rows = _build_line_table(line_program)
+    return rows if rows else None
+
+
 def compute_line_span(
     cu: CompileUnit,
     dwarf: DWARFInfo,
     comp_dir: Optional[str],
     ranges: List[AddressRange],
+    line_table: Optional[List[LineRow]] = None,
 ) -> LineSpan:
     """
     Given a function's address *ranges* and its parent CU,
     intersect the CU's line program to produce a LineSpan.
+
+    Parameters
+    ----------
+    line_table : list[LineRow], optional
+        Pre-built line table (from ``build_cu_line_table``).  When
+        provided the expensive state-machine replay is skipped.
+        Pass ``None`` (default) to build internally — preserving
+        backward compatibility.
     """
     if not ranges:
         return LineSpan()
@@ -211,7 +239,7 @@ def compute_line_span(
     if line_program is None:
         return LineSpan()
 
-    rows = _build_line_table(line_program)
+    rows = line_table if line_table is not None else _build_line_table(line_program)
     if not rows:
         return LineSpan()
 

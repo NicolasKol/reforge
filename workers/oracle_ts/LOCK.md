@@ -60,7 +60,8 @@ provides metadata needed for downstream mismatch detection.
 ### Structural Node Index
 7. Within each function, index nodes for a fixed allowlist:
    `compound_statement`, `if_statement`, `for_statement`,
-   `while_statement`, `switch_statement`, `return_statement`.
+   `while_statement`, `do_statement`, `switch_statement`,
+   `return_statement`, `goto_statement`, `labeled_statement`.
 8. For each node:
    `node_type`, spans (byte/line), `node_hash_raw`, `depth`.
 9. Set `uncertainty_flags: ["DEEP_NESTING"]` when depth ≥ threshold.
@@ -178,3 +179,33 @@ be refused or deferred to a future package with its own lock.
 | `oracle_types`      | Type recovery and matching |
 
 Each future package must define its own lock before implementation begins.
+
+---
+
+## Changelog
+
+### v0.1.1 (2025-02-15)
+
+**Structural-node allowlist expansion (non-breaking).** Added
+`do_statement`, `goto_statement`, and `labeled_statement` to
+`STRUCTURAL_NODE_TYPES`. Existing indexed node types are unchanged; new
+types are additive — downstream consumers that filter by type are
+unaffected. No schema version bump required (output shape is unchanged;
+only new `node_type` string values may appear).
+
+**`_find_func_node` fallback fix.** When the helper could not locate the
+`function_definition` node (returns `None`), the runner fell back to
+passing the entire TU root to `judge_function`, causing
+`_has_anonymous_aggregate` to scan the whole translation unit and produce
+false `ANONYMOUS_AGGREGATE_PRESENT` warnings on unrelated functions. The
+runner now passes `None`, and `judge_function` skips the anonymous-
+aggregate check when the node is unavailable.
+
+**Parameter rename.** `all_names` → `duplicate_names` in
+`judge_function()` for clarity; callers already passed the duplicate-name
+set.
+
+**Test coverage.** Added `test_normalizer.py` (19 tests),
+`test_node_index.py` (~20 tests) covering per-type detection, depth
+tracking, deep-nesting flags, and determinism. Added `DO_WHILE_I` and
+`GOTO_I` fixtures to `conftest.py`.

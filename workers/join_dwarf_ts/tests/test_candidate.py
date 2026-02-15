@@ -89,6 +89,51 @@ class TestScoreCandidates:
         ))
         assert sorted_r[0].ts_func_id == "a.c.i:1:2:h1"
 
+    def test_partial_overlap(self):
+        """TS span covers 3 of 5 DWARF evidence entries → ratio = 0.6."""
+        i_content = '# 1 "src.c"\nline1;\nline2;\nline3;\nline4;\nline5;\n'
+        om = build_origin_map(i_content, "src.c.i")
+
+        # DWARF evidence covers lines 1-5, each with count=1
+        dwarf_evidence = {
+            ("src.c", 1): 1, ("src.c", 2): 1, ("src.c", 3): 1,
+            ("src.c", 4): 1, ("src.c", 5): 1,
+        }
+        # TS function spans only .i lines 1-3 (maps to src.c lines 1-3)
+        ts_funcs = [
+            _make_ts_func("src.c.i:1:3:h", "src.c.i", "partial", 1, 3),
+        ]
+
+        results = score_candidates(dwarf_evidence, ts_funcs, om)
+        assert len(results) == 1
+        assert results[0].overlap_count == 3
+        assert results[0].total_count == 5
+        assert results[0].overlap_ratio == 0.6
+        assert results[0].gap_count == 2
+
+    def test_dwarf_multiplicity_counted(self):
+        """DWARF evidence with multiplicity > 1: full count is added, not 1.
+
+        This validates the consumed-set deduplication semantics: each unique
+        origin (file, line) is counted at most once, but its full DWARF
+        multiplicity is added to overlap_count.
+        """
+        i_content = '# 1 "m.c"\nstmt_a;\nstmt_b;\n'
+        om = build_origin_map(i_content, "m.c.i")
+
+        # Line 1 has multiplicity 3 (3 machine instructions)
+        dwarf_evidence = {("m.c", 1): 3, ("m.c", 2): 1}
+        ts_funcs = [
+            _make_ts_func("m.c.i:1:1:h", "m.c.i", "fn", 1, 1),
+        ]
+
+        results = score_candidates(dwarf_evidence, ts_funcs, om)
+        assert len(results) == 1
+        # overlap_count should be 3 (full multiplicity), not 1
+        assert results[0].overlap_count == 3
+        assert results[0].total_count == 4  # 3 + 1
+        assert results[0].gap_count == 1
+
 
 class TestSelectBest:
     """select_best() threshold and tie-break tests."""
@@ -146,6 +191,79 @@ class TestSelectBest:
         # With overlap_count=0, score_candidates returns empty → NO_CANDIDATES
         best, ties, reasons = select_best([], 0.7, 0.02, 1)
         assert "NO_CANDIDATES" in reasons
+
+    def test_below_min_overlap_with_candidate(self):
+        """Candidate exists but overlap_count < min_overlap_lines → NO_CANDIDATES."""
+        candidates = [
+            CandidateResult(
+                ts_func_id="a:1:5:h", tu_path="a", function_name="f",
+                context_hash="h", overlap_count=2, total_count=5,
+                overlap_ratio=0.4, gap_count=3, span_size=5, start_byte=0,
+            ),
+        ]
+        best, ties, reasons = select_best(candidates, 0.7, 0.02, min_overlap_lines=3)
+        assert best is None
+        assert "NO_CANDIDATES" in reasons
+
+    def test_gap_count_tag(self):
+        """gap_count > 0 emits PC_LINE_GAP alongside the primary reason."""
+        candidates = [
+            CandidateResult(
+                ts_func_id="a:1:5:h", tu_path="a", function_name="f",
+                context_hash="h", overlap_count=4, total_count=5,
+                overlap_ratio=0.8, gap_count=1, span_size=5, start_byte=0,
+            ),
+        ]
+        best, ties, reasons = select_best(candidates, 0.7, 0.02, 1)
+        assert best is not None
+        assert "UNIQUE_BEST" in reasons
+        assert "PC_LINE_GAP" in reasons
+
+    def test_epsilon_boundary_exact_tie(self):
+        """Candidates differing by just under epsilon → NEAR_TIE detected.
+
+        Due to IEEE 754, ``1.0 - 0.02`` is not exactly ``0.02`` away from
+        ``1.0``.  We use ``0.981`` (within epsilon = 0.02 of 1.0) to test
+        the boundary without floating-point edge effects.
+        """
+        eps = 0.02
+        candidates = [
+            CandidateResult(
+                ts_func_id="a:1:5:h1", tu_path="a.i", function_name="f1",
+                context_hash="h1", overlap_count=5, total_count=5,
+                overlap_ratio=1.0, gap_count=0, span_size=5, start_byte=0,
+            ),
+            CandidateResult(
+                ts_func_id="b:1:5:h2", tu_path="b.i", function_name="f2",
+                context_hash="h2", overlap_count=5, total_count=5,
+                overlap_ratio=0.981, gap_count=0, span_size=5, start_byte=0,
+            ),
+        ]
+        # 1.0 - 0.981 = 0.019 < eps → near-tie
+        best, ties, reasons = select_best(candidates, 0.7, eps, 1)
+        assert len(ties) == 1
+        assert "NEAR_TIE" in reasons
+
+    def test_epsilon_boundary_no_tie(self):
+        """Candidates differing by epsilon + 0.001 → no NEAR_TIE."""
+        eps = 0.02
+        candidates = [
+            CandidateResult(
+                ts_func_id="a:1:5:h1", tu_path="a.i", function_name="f1",
+                context_hash="h1", overlap_count=5, total_count=5,
+                overlap_ratio=1.0, gap_count=0, span_size=5, start_byte=0,
+            ),
+            CandidateResult(
+                ts_func_id="b:1:5:h2", tu_path="b.i", function_name="f2",
+                context_hash="h2", overlap_count=5, total_count=5,
+                overlap_ratio=1.0 - eps - 0.001, gap_count=0, span_size=5,
+                start_byte=0,
+            ),
+        ]
+        best, ties, reasons = select_best(candidates, 0.7, eps, 1)
+        assert len(ties) == 0
+        assert "NEAR_TIE" not in reasons
+        assert "UNIQUE_BEST" in reasons
 
 
 class TestHeaderReplication:

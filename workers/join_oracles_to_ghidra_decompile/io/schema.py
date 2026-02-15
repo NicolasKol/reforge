@@ -82,6 +82,12 @@ class JoinedFunctionRow(BaseModel):
     loc_decompiled: int = 0
     temp_var_count: int = 0
     placeholder_type_rate: float = 0.0
+    # Pass-through from GhidraFunctionRow (v1.2)
+    cyclomatic: int = 0
+    asm_insn_count: int = 0
+    insn_to_c_ratio: float = 0.0
+    has_indirect_jumps: bool = False
+    total_vars_in_func: int = 0
 
     # ── Join diagnostics ──────────────────────────────────────────────────
     pc_overlap_bytes: int = 0
@@ -163,6 +169,10 @@ class DecompilerDistributions(BaseModel):
     warning_prevalence: Dict[str, int] = Field(default_factory=dict)
     goto_density_percentiles: Dict[str, float] = Field(default_factory=dict)
     placeholder_type_rate_percentiles: Dict[str, float] = Field(default_factory=dict)
+    cyclomatic_percentiles: Dict[str, float] = Field(default_factory=dict)
+    insn_to_c_ratio_percentiles: Dict[str, float] = Field(default_factory=dict)
+    asm_insn_count_percentiles: Dict[str, float] = Field(default_factory=dict)
+    n_has_indirect_jumps: int = 0
     n_fat_functions: int = 0
     n_many_to_one_ghidra_funcs: int = 0
 
@@ -284,6 +294,9 @@ class JoinReport(BaseModel):
     yield_by_opt: Dict[str, int] = Field(default_factory=dict)
     yield_by_match_kind: Dict[str, int] = Field(default_factory=dict)
 
+    # ── Join warning histogram ─────────────────────────────────────────────
+    join_warning_histogram: Dict[str, int] = Field(default_factory=dict)
+
     # ── Quality-weight audit ──────────────────────────────────────────────
     quality_weight_audit: QualityWeightAudit = Field(
         default_factory=QualityWeightAudit
@@ -298,6 +311,9 @@ class JoinReport(BaseModel):
     variable_join: VariableJoinStatus = Field(
         default_factory=VariableJoinStatus
     )
+
+    # ── Invariant violations (audit trail) ────────────────────────────────
+    invariant_violations: List[Dict[str, Any]] = Field(default_factory=list)
 
     # ── Timestamp ─────────────────────────────────────────────────────────
     timestamp: str = Field(

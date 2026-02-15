@@ -67,6 +67,7 @@ class FunctionWarning(str, Enum):
     UNRESOLVED_INDIRECT_JUMP = "UNRESOLVED_INDIRECT_JUMP"
     NON_RETURNING_CALL_MISMODELED = "NON_RETURNING_CALL_MISMODELED"
     SWITCH_RECOVERY_FAILED = "SWITCH_RECOVERY_FAILED"
+    DECOMPILE_TIMEOUT = "DECOMPILE_TIMEOUT"
     DECOMPILER_INTERNAL_WARNING = "DECOMPILER_INTERNAL_WARNING"
     INLINE_LIKELY = "INLINE_LIKELY"
 
@@ -193,6 +194,9 @@ def judge_function(
 
     if FunctionWarning.BAD_INSTRUCTION_DATA.value in warnings:
         reasons.append(FunctionWarning.BAD_INSTRUCTION_DATA.value)
+
+    if FunctionWarning.DECOMPILE_TIMEOUT.value in warnings:
+        reasons.append(FunctionWarning.DECOMPILE_TIMEOUT.value)
 
     if body_start_va is None or body_end_va is None:
         reasons.append("NO_BODY_RANGE")

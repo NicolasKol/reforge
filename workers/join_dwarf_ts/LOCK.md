@@ -2,7 +2,7 @@
 
 > **Package name:** `join_dwarf_ts`
 > **Joiner version:** v0
-> **Schema version:** 0.1
+> **Schema version:** 0.2
 > **Profile ID:** `join-dwarf-ts-v0`
 
 ---
@@ -100,10 +100,44 @@ and `.i` files, produces alignment JSON files.
 | Reason               | Condition                                        |
 |----------------------|--------------------------------------------------|
 | `NO_CANDIDATES`      | No TS functions found in any TU for this DWARF fn|
-| `NO_OVERLAP`         | All candidates had zero overlap                  |
 | `LOW_OVERLAP_RATIO`  | Best candidate below `overlap_threshold`         |
-| `BELOW_MIN_OVERLAP`  | Best candidate below `min_overlap_lines`         |
 | `ORIGIN_MAP_MISSING` | `.i` file not found or has no `#line` directives |
+
+### Informational tags (may accompany any verdict)
+
+| Reason               | Condition                                        |
+|----------------------|--------------------------------------------------|
+| `PC_LINE_GAP`        | `gap_count > 0` — some DWARF lines unmatched     |
+
+---
+
+## Metric interpretation (v0)
+
+### Overlap ratio asymmetry
+
+`overlap_ratio = overlap_count / total_count` is a **recall-style**
+measure: it answers "what fraction of the DWARF function's line-program
+evidence is explained by this TS function candidate?"
+
+It is intentionally asymmetric.  A TS function may contain source lines
+that do not appear in the DWARF evidence (comments, declarations,
+preprocessor artifacts); this is benign and should not penalise the
+candidate.  A symmetric metric (e.g. Jaccard) would penalise such
+mismatches.  No precision component is included in v0 — the span-size
+tie-break (smaller spans preferred) provides an indirect parsimony bias.
+
+### Origin deduplication (consumed set)
+
+When scanning a TS function's `.i` line span, the same original-source
+`(file, line)` may be reached via multiple `.i` lines (e.g. due to
+macro expansion producing repeated `#line` directives).  The algorithm
+counts each unique origin **at most once**, but when it does count an
+origin it adds the full DWARF multiplicity `E[(file, line)]`, not 1.
+
+This means `overlap_count` reflects how many DWARF line-program entries
+are accounted for, preserving the weighting that the compiler's code
+generation assigns.  It is more representative of the function's binary
+footprint than a unique-line count.
 
 ---
 

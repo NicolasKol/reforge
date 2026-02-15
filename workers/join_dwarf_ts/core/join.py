@@ -28,7 +28,11 @@ from join_dwarf_ts.io.schema import (
     PairCounts,
 )
 from join_dwarf_ts.policy.profile import JoinProfile
-from join_dwarf_ts.policy.verdict import JoinVerdict
+from join_dwarf_ts.policy.verdict import (
+    AmbiguousReason,
+    JoinVerdict,
+    NoMatchReason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,15 +76,23 @@ class DwarfFunctionInput:
 def _build_ts_function_map(
     ts_functions: List[dict],
 ) -> Dict[str, List[TsFunctionInfo]]:
-    """Group TS functions by tu_path for efficient lookup."""
+    """Group TS functions by tu_path for efficient lookup.
+
+    Expects ``ts_func_id`` in the format ``tu_path:start:end:hash`` where
+    the last three colon-separated fields are integer start, integer end,
+    and a hex content hash.  ``tu_path`` is everything before those three
+    fields (may itself contain path separators but not colons).
+    """
     by_tu: Dict[str, List[TsFunctionInfo]] = {}
 
     for f in ts_functions:
-        # Determine tu_path from ts_func_id (format: tu_path:start:end:hash)
         ts_func_id = f["ts_func_id"]
-        # tu_path is everything before the last three colon-separated fields
         parts = ts_func_id.rsplit(":", 3)
-        tu_path = parts[0] if len(parts) == 4 else ""
+        assert len(parts) == 4, (
+            f"Unexpected ts_func_id format (expected tu_path:start:end:hash): "
+            f"{ts_func_id!r}"
+        )
+        tu_path = parts[0]
 
         info = TsFunctionInfo(
             ts_func_id=ts_func_id,
@@ -271,25 +283,27 @@ def run_join(
 
         # Propagate MULTI_FILE_RANGE from DWARF
         if "MULTI_FILE_RANGE" in dwarf_func.reasons:
-            reasons.append("MULTI_FILE_RANGE_PROPAGATED")
+            reasons.append(AmbiguousReason.MULTI_FILE_RANGE_PROPAGATED.value)
 
         # Check origin map availability
         if origin_warnings and best is None:
-            reasons.append("ORIGIN_MAP_MISSING")
+            reasons.append(NoMatchReason.ORIGIN_MAP_MISSING.value)
 
         # Header replication collision
         is_replication = False
         if best is not None and near_ties:
             is_replication = detect_header_replication(best, near_ties)
             if is_replication:
-                reasons.append("HEADER_REPLICATION_COLLISION")
+                reasons.append(AmbiguousReason.HEADER_REPLICATION_COLLISION.value)
 
         # Determine final verdict
-        if best is None or "NO_CANDIDATES" in reasons:
+        if best is None or NoMatchReason.NO_CANDIDATES.value in reasons:
             join_verdict = JoinVerdict.NO_MATCH
-        elif is_replication or (near_ties and "LOW_OVERLAP_RATIO" not in reasons):
+        elif is_replication or (
+            near_ties and NoMatchReason.LOW_OVERLAP_RATIO.value not in reasons
+        ):
             join_verdict = JoinVerdict.AMBIGUOUS
-        elif "LOW_OVERLAP_RATIO" in reasons:
+        elif NoMatchReason.LOW_OVERLAP_RATIO.value in reasons:
             join_verdict = JoinVerdict.NO_MATCH
         else:
             join_verdict = JoinVerdict.MATCH

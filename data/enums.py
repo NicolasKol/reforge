@@ -98,12 +98,10 @@ class AlignmentReason(str, Enum):
 
     # ── No-match reasons ─────────────────────────────────────────────────
     NO_CANDIDATES                 = "NO_CANDIDATES"
-    NO_OVERLAP                    = "NO_OVERLAP"
     LOW_OVERLAP_RATIO             = "LOW_OVERLAP_RATIO"
-    BELOW_MIN_OVERLAP             = "BELOW_MIN_OVERLAP"
     ORIGIN_MAP_MISSING            = "ORIGIN_MAP_MISSING"
 
-    # ── Gap tag (emitted by select_best, not in any worker enum) ─────────
+    # ── Informational (may accompany any verdict) ────────────────────────
     PC_LINE_GAP                   = "PC_LINE_GAP"
 
 
@@ -189,18 +187,22 @@ class GhidraBinaryWarnReason(str, Enum):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class GhidraFunctionWarning(str, Enum):
-    """Taxonomy of per-function warnings in Ghidra decompilation (§5.2)."""
+    """Taxonomy of per-function warnings in Ghidra decompilation (§5.2).
+
+    Synced with analyzer_ghidra_decompile _WARNING_PATTERNS + INLINE_LIKELY.
+    """
 
     DECOMPILE_TIMEOUT              = "DECOMPILE_TIMEOUT"
     UNKNOWN_CALLING_CONVENTION     = "UNKNOWN_CALLING_CONVENTION"
+    PARAM_STORAGE_LOCKED           = "PARAM_STORAGE_LOCKED"
     UNREACHABLE_BLOCKS_REMOVED     = "UNREACHABLE_BLOCKS_REMOVED"
     BAD_INSTRUCTION_DATA           = "BAD_INSTRUCTION_DATA"
+    TRUNCATED_CONTROL_FLOW         = "TRUNCATED_CONTROL_FLOW"
     UNRESOLVED_INDIRECT_JUMP       = "UNRESOLVED_INDIRECT_JUMP"
-    OVERLAPPING_RANGES             = "OVERLAPPING_RANGES"
-    SWITCH_TABLE_INCOMPLETE        = "SWITCH_TABLE_INCOMPLETE"
-    NORETURN_MISMATCH              = "NORETURN_MISMATCH"
-    STRUCTURE_WARNING              = "STRUCTURE_WARNING"
+    NON_RETURNING_CALL_MISMODELED  = "NON_RETURNING_CALL_MISMODELED"
+    SWITCH_RECOVERY_FAILED         = "SWITCH_RECOVERY_FAILED"
     DECOMPILER_INTERNAL_WARNING    = "DECOMPILER_INTERNAL_WARNING"
+    INLINE_LIKELY                  = "INLINE_LIKELY"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -1,8 +1,8 @@
 # join_oracles_to_ghidra_decompile v1 — Scope Lock
 
 > **Package name:** `join_oracles_to_ghidra_decompile`
-> **Joiner version:** v1
-> **Schema version:** 0.1
+> **Joiner version:** v1.2
+> **Schema version:** 0.3
 > **Profile ID:** `join-oracles-ghidra-v1`
 
 ---
@@ -118,7 +118,7 @@ excluded from the interval index.
 `is_high_confidence = true` iff ALL of:
 
 - DWARF oracle verdict = `ACCEPT`
-- Alignment: `MATCH`, `n_candidates == 1`, `overlap_ratio == 1.0`
+- Alignment: `MATCH`, `n_candidates == 1`, `overlap_ratio >= 0.95`
 - Function join: `JOINED_STRONG`
 - Not noise: not external_block, not thunk, not aux, not import_proxy
 - `cfg_completeness ≠ LOW`
@@ -190,3 +190,13 @@ to a future version.
 | v2      | Real DWARF variable join (requires oracle schema v0.3) |
 | v2      | Name-based fallback for NO_RANGE functions        |
 | v3      | Cross-decompiler join (IDA, Binary Ninja)         |
+
+---
+
+## §13 Changelog
+
+| Version | Change |
+|---------|--------|
+| v1 → v1.1 | Added eligibility classifier (Phase 0), confidence funnel, quality_weight audit, collision summary. Schema 0.1 → 0.2. |
+| v1.1-fix1 | §6 corrected: HC alignment gate is `overlap_ratio >= 0.95` (code always used 0.95; LOCK had stale `== 1.0`). |
+| v1.1 → v1.2 | Schema 0.2 → 0.3. Pass-through decompiler metrics to JoinedFunctionRow: `cyclomatic`, `asm_insn_count`, `insn_to_c_ratio`, `has_indirect_jumps`, `total_vars_in_func`. Report gains `cyclomatic_percentiles`, `insn_to_c_ratio_percentiles`, `asm_insn_count_percentiles`, `n_has_indirect_jumps` in `DecompilerDistributions`. Added `join_warning_histogram` to report. Added `invariant_violations` audit trail in report JSON. Removed deprecated `_quality_weight_bin`. Added unit tests for `_decompiler_quality_flags`, `_assign_confidence_tier`, `_detect_upstream_collapse`, `_build_collision_summary`. |

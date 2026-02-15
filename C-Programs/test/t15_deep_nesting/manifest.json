@@ -1,0 +1,8 @@
+{
+    "name": "t15_deep_nesting",
+    "description": "Extreme control-flow nesting to reliably trigger DEEP_NESTING uncertainty flags. Combines deeply nested if/for/while/do/switch blocks, plus functions with goto-based error cascades. Exercises all structural node types simultaneously.",
+    "files": ["nesting.h", "deep_control.c", "deep_data.c", "main.c"],
+    "stress_tags": ["deep_nesting", "all_structural_nodes", "do_while", "goto_cleanup", "uncertainty_flags"],
+    "oracle_pressure": "Functions intentionally exceed the nesting depth threshold (6+). Oracle must report DEEP_NESTING in uncertainty_flags and set WARN verdicts. Exercises every structural node type in the allowlist (compound_statement, if_statement, for_statement, while_statement, do_statement, switch_statement, return_statement, goto_statement, labeled_statement) within the same TU. Deep nesting interacts with compiler inlining and DWARF scope emission at higher optimization levels.",
+    "requires_libm": false
+}

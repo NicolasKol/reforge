@@ -1,0 +1,8 @@
+{
+    "name": "t14_anon_aggregates",
+    "description": "Anonymous structs, unions, and enums nested inside functions. Tests oracle_ts detection of ANONYMOUS_AGGREGATE_PRESENT and exercises complex type layouts that challenge DWARF type recovery.",
+    "files": ["types.h", "protocol.c", "registry.c", "main.c"],
+    "stress_tags": ["anonymous_aggregate", "nested_types", "union_variant", "bitfield"],
+    "oracle_pressure": "Anonymous struct/union members produce DW_TAG_structure_type and DW_TAG_union_type without DW_AT_name. Oracle must detect these within function spans for the ANONYMOUS_AGGREGATE_PRESENT warning. Bitfields and enum constants nested inside functions add DWARF complexity. Decompiler output may flatten or reorder these, making source-to-decompiled matching harder.",
+    "requires_libm": false
+}

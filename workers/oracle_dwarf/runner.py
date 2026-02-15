@@ -12,7 +12,11 @@ from typing import Tuple
 from oracle_dwarf.core.elf_reader import ElfMeta, read_elf
 from oracle_dwarf.core.dwarf_loader import DwarfLoader
 from oracle_dwarf.core.function_index import index_functions
-from oracle_dwarf.core.line_mapper import compute_line_span, resolve_file_index
+from oracle_dwarf.core.line_mapper import (
+    build_cu_line_table,
+    compute_line_span,
+    resolve_file_index,
+)
 from oracle_dwarf.io.schema import (
     FunctionCounts,
     LineRowEntry,
@@ -110,6 +114,14 @@ def run_oracle(
                 raw_funcs = index_functions(
                     cu_handle.cu, cu_handle.cu_offset, loader.dwarf
                 )
+
+                # Build the CU line table once and share it across all
+                # functions in this CU.  Avoids replaying the DWARF line
+                # state machine N times (once per function).
+                cu_line_table = build_cu_line_table(
+                    cu_handle.cu, loader.dwarf
+                )
+
                 for fe in raw_funcs:
                     # compute line span
                     span = compute_line_span(
@@ -117,6 +129,7 @@ def run_oracle(
                         loader.dwarf,
                         cu_handle.comp_dir,
                         fe.ranges,
+                        line_table=cu_line_table,
                     )
 
                     # apply policy

@@ -128,6 +128,9 @@ class AlignmentReport(BaseModel):
     thresholds: Dict[str, Any] = Field(default_factory=dict)
     excluded_path_prefixes: List[str] = Field(default_factory=list)
 
+    # NOTE: timestamp is the sole non-deterministic field in the report.
+    # The determinism guarantee (LOCK.md §7) applies to alignment_pairs.json;
+    # alignment_report.json differs only in this field across runs.
     timestamp: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

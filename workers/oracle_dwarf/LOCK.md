@@ -132,6 +132,25 @@ Each future package must define its own lock before implementation begins.
 
 ## Version History
 
+### v0.1.1 (February 2026)
+- **Overlapping range merge**: `_normalize_ranges` now merges overlapping and
+  adjacent `[low, high)` segments via `_merge_ranges`.  Prevents inflated
+  `total_range_bytes` in downstream `join_oracles_to_ghidra_decompile`.
+  Line evidence (`n_line_rows`, `line_rows`, `dominant_file_ratio`) was
+  already safe — `_in_ranges` is a boolean per-row check — but byte-range
+  totals improve for binaries with overlapping range-list entries.
+- **CU line-table caching**: `compute_line_span` accepts an optional
+  `line_table` parameter.  `runner.py` now builds the line table once per
+  CU and reuses it for all functions, avoiding redundant state-machine
+  replays.  Outputs are numerically identical; this is a performance
+  improvement only.
+- **O2/O3 test coverage**: Added `MULTI_FUNC_C` fixture with
+  `__attribute__((noinline))` functions and O2/O3 compilation fixtures.
+  New `test_higher_opts.py` validates binary gate, function enumeration,
+  range validity, line-span invariants, and overlap safety at higher
+  optimization levels — substantiating the v0.1 O2/O3 support claim.
+- No schema version bump — output format is unchanged.
+
 ### v0.1 (February 2026)
 - **Expanded optimization level support**: Added O2 and O3 to supported optimization levels
 - Profile ID changed from `linux-x86_64-gcc-O0O1` to `linux-x86_64-gcc-O0O1O2O3`

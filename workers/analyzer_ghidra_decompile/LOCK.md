@@ -79,20 +79,21 @@ Five files per `<test_case>/<opt>/<variant>/ghidra_decompile/`:
 | `WARN`  | Decompiled but with warnings or noise flags |
 | `FAIL`  | Decompilation failed or no body            |
 
-### §5.2 Warning taxonomy (10 codes)
+### §5.2 Warning taxonomy (11 codes)
 
 | Code                           | Trigger                              |
 |--------------------------------|--------------------------------------|
-| `DECOMPILE_TIMEOUT`            | Decompilation timed out              |
+| `DECOMPILE_TIMEOUT`            | Regex: timed out / timeout           |
 | `UNKNOWN_CALLING_CONVENTION`   | Regex: calling convention            |
+| `PARAM_STORAGE_LOCKED`         | Regex: param storage lock            |
 | `UNREACHABLE_BLOCKS_REMOVED`   | Regex: unreachable block             |
-| `BAD_INSTRUCTION_DATA`         | Regex: bad instruction               |
+| `BAD_INSTRUCTION_DATA`         | Regex: bad instruction / data        |
+| `TRUNCATED_CONTROL_FLOW`       | Regex: truncated control flow        |
 | `UNRESOLVED_INDIRECT_JUMP`     | Regex: indirect jump unresolved      |
-| `OVERLAPPING_RANGES`           | Regex: overlapping                   |
-| `SWITCH_TABLE_INCOMPLETE`      | Regex: switch table                  |
-| `NORETURN_MISMATCH`            | Regex: noreturn                      |
-| `STRUCTURE_WARNING`            | Regex: structure                     |
+| `NON_RETURNING_CALL_MISMODELED`| Regex: non-return                    |
+| `SWITCH_RECOVERY_FAILED`       | Regex: switch recovery / could not recover |
 | `DECOMPILER_INTERNAL_WARNING`  | Fallback for unmatched warnings      |
+| `INLINE_LIKELY`                | Added in Pass 2 if fat+temp+bb thresholds met |
 
 ---
 
@@ -276,3 +277,4 @@ via build receipts and joined using `binary_sha256` as the key.
 | Version | Date       | Changes               |
 |---------|------------|-----------------------|
 | v1      | 2025-06    | Initial specification |
+| v1-fix1 | 2026-02    | §5.2 synced with implementation (review R13/R14): added DECOMPILE_TIMEOUT regex, updated taxonomy to 11 codes matching `_WARNING_PATTERNS`. P90 computation fixed (review R9). `_TEMP_NAME_RE` deduplicated (review R3). |

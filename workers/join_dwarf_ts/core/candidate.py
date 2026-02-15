@@ -16,6 +16,12 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from join_dwarf_ts.core.origin_map import OriginMap, query_forward
+from join_dwarf_ts.policy.verdict import (
+    AmbiguousReason,
+    InformationalReason,
+    MatchReason,
+    NoMatchReason,
+)
 
 
 @dataclass(frozen=True)
@@ -83,7 +89,7 @@ def score_candidates(
 
     for ts_func in ts_functions:
         overlap_count = 0
-        consumed: set = set()  # origins already counted for this candidate
+        consumed: set[tuple[str, int]] = set()  # origins already counted
 
         # Scan .i lines within the TS function span
         for i_line in range(ts_func.start_line, ts_func.end_line + 1):
@@ -163,17 +169,17 @@ def select_best(
     reasons: List[str] = []
 
     if not all_candidates:
-        reasons.append("NO_CANDIDATES")
+        reasons.append(NoMatchReason.NO_CANDIDATES.value)
         return None, [], reasons
 
     best = all_candidates[0]
 
     if best.overlap_count < min_overlap_lines:
-        reasons.append("NO_CANDIDATES")
+        reasons.append(NoMatchReason.NO_CANDIDATES.value)
         return None, [], reasons
 
     if best.overlap_ratio < overlap_threshold:
-        reasons.append("LOW_OVERLAP_RATIO")
+        reasons.append(NoMatchReason.LOW_OVERLAP_RATIO.value)
 
     # Find near-ties (within epsilon of best)
     near_ties = [
@@ -182,12 +188,12 @@ def select_best(
     ]
 
     if near_ties:
-        reasons.append("NEAR_TIE")
-    elif "LOW_OVERLAP_RATIO" not in reasons:
-        reasons.append("UNIQUE_BEST")
+        reasons.append(AmbiguousReason.NEAR_TIE.value)
+    elif NoMatchReason.LOW_OVERLAP_RATIO.value not in reasons:
+        reasons.append(MatchReason.UNIQUE_BEST.value)
 
     if best.gap_count > 0:
-        reasons.append("PC_LINE_GAP")
+        reasons.append(InformationalReason.PC_LINE_GAP.value)
 
     return best, near_ties, reasons
 

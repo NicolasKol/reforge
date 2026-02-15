@@ -10,7 +10,7 @@
 .env.*.local
 *.pem
 *.key
-
+.claude
 # =============================================================================
 # Data Directories (Large Files / Binaries)
 # =============================================================================
@@ -29,6 +29,7 @@ volumes/
 experiments/runs/
 experiments/notebooks/.ipynb_checkpoints/
 figures/oracle_analysis
+/docs/review
 
 # =============================================================================
 # Build Artifacts

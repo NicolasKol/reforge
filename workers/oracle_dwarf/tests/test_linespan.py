@@ -155,3 +155,28 @@ class TestLineSpan:
             assert keys == sorted(keys), (
                 f"{func.name}: line_rows not sorted by (file, line)"
             )
+
+    def test_deterministic_across_runs(self, debug_binary_O0):
+        """Two runs on the same binary must yield identical line evidence.
+
+        Validates that the CU line-table caching does not introduce
+        ordering or counting non-determinism.
+        """
+        _, funcs_a = run_oracle(str(debug_binary_O0))
+        _, funcs_b = run_oracle(str(debug_binary_O0))
+
+        assert len(funcs_a.functions) == len(funcs_b.functions)
+
+        for fa, fb in zip(funcs_a.functions, funcs_b.functions):
+            assert fa.function_id == fb.function_id
+            assert fa.n_line_rows == fb.n_line_rows, (
+                f"{fa.name}: n_line_rows differs between runs: "
+                f"{fa.n_line_rows} vs {fb.n_line_rows}"
+            )
+            assert fa.dominant_file_ratio == fb.dominant_file_ratio, (
+                f"{fa.name}: dominant_file_ratio differs between runs"
+            )
+            # Compare line_rows element by element
+            assert len(fa.line_rows) == len(fb.line_rows)
+            for ra, rb in zip(fa.line_rows, fb.line_rows):
+                assert (ra.file, ra.line, ra.count) == (rb.file, rb.line, rb.count)

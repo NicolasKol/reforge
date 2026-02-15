@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 
 def _classify_aux(ghidra_name: str, aux_names: tuple) -> bool:
     """Return True if the Ghidra function name is a known aux function."""
-    name_clean = ghidra_name.strip()
+    name_clean = (ghidra_name or "").strip()
     return normalize_glibc_name(name_clean) in aux_names
 
 
@@ -115,6 +115,11 @@ def build_joined_function_rows(
         loc = grow.c_line_count if grow else 0
         temp_v = grow.temp_var_count if grow else 0
         ph_rate = grow.placeholder_type_rate if grow else 0.0
+        cyclo = grow.cyclomatic if grow else 0
+        asm_insn = grow.asm_insn_count if grow else 0
+        insn_c_ratio = grow.insn_to_c_ratio if grow else 0.0
+        has_indirect = grow.has_indirect_jumps if grow else False
+        total_vars = grow.total_vars_in_func if grow else 0
 
         # High-confidence gate (returns bool + reject reason)
         hc, hc_reject = is_high_confidence(
@@ -190,6 +195,11 @@ def build_joined_function_rows(
             loc_decompiled=loc,
             temp_var_count=temp_v,
             placeholder_type_rate=ph_rate,
+            cyclomatic=cyclo,
+            asm_insn_count=asm_insn,
+            insn_to_c_ratio=insn_c_ratio,
+            has_indirect_jumps=has_indirect,
+            total_vars_in_func=total_vars,
             # Join diagnostics
             pc_overlap_bytes=jr.pc_overlap_bytes,
             pc_overlap_ratio=jr.pc_overlap_ratio,
@@ -332,12 +342,6 @@ def _percentiles(
     return result
 
 
-def _quality_weight_bin(qw: float) -> str:
-    """Bin a quality_weight value (DEPRECATED — kept for reference)."""
-    # Superseded by data.binning.quality_weight_bin_detailed
-    raise NotImplementedError("Use data.binning.quality_weight_bin_detailed")
-
-
 def _n_candidates_bin(n: Optional[int]) -> str:
     """Bin n_candidates count."""
     if n is None:
@@ -446,6 +450,7 @@ def build_join_report(
     yield_by_qw: Counter = Counter()
     yield_by_overlap: Counter = Counter()
     yield_by_opt: Counter = Counter()
+    join_warning_counter: Counter = Counter()
 
     # ── Quality-weight audit counters ───────────────────────────────────────
     n_qw_gt_1 = 0
@@ -489,6 +494,9 @@ def build_join_report(
 
         yield_by_opt[r.opt] += 1
 
+        for jw in r.join_warnings:
+            join_warning_counter[jw] += 1
+
         # Audit counters
         if r.quality_weight > 1.0:
             n_qw_gt_1 += 1
@@ -514,6 +522,10 @@ def build_join_report(
     warning_counter: Counter = Counter()
     goto_densities: List[float] = []
     ph_rates: List[float] = []
+    cyclomatics: List[float] = []
+    insn_c_ratios: List[float] = []
+    asm_insn_counts: List[float] = []
+    n_indirect = 0
 
     joined_rows = [r for r in rows if r.ghidra_func_id is not None]
     for r in joined_rows:
@@ -522,6 +534,11 @@ def build_join_report(
             warning_counter[w] += 1
         goto_densities.append(r.goto_count / max(r.loc_decompiled, 1))
         ph_rates.append(r.placeholder_type_rate)
+        cyclomatics.append(float(r.cyclomatic))
+        insn_c_ratios.append(r.insn_to_c_ratio)
+        asm_insn_counts.append(float(r.asm_insn_count))
+        if r.has_indirect_jumps:
+            n_indirect += 1
 
     n_joined_total = max(len(joined_rows), 1)
     cfg_fracs = {
@@ -540,6 +557,10 @@ def build_join_report(
         warning_prevalence=dict(sorted(warning_counter.items())),
         goto_density_percentiles=_percentiles(goto_densities),
         placeholder_type_rate_percentiles=_percentiles(ph_rates),
+        cyclomatic_percentiles=_percentiles(cyclomatics),
+        insn_to_c_ratio_percentiles=_percentiles(insn_c_ratios),
+        asm_insn_count_percentiles=_percentiles(asm_insn_counts),
+        n_has_indirect_jumps=n_indirect,
         n_fat_functions=sum(
             1 for r in rows if r.fat_function_multi_dwarf
         ),
@@ -578,6 +599,7 @@ def build_join_report(
         yield_by_align_overlap_ratio_bin=dict(sorted(yield_by_overlap.items())),
         yield_by_opt=dict(sorted(yield_by_opt.items())),
         yield_by_match_kind=dict(sorted(match_counts.items())),
+        join_warning_histogram=dict(sorted(join_warning_counter.items())),
         quality_weight_audit=qw_audit,
         decompiler=decompiler,
         variable_join=var_status,

@@ -1,10 +1,10 @@
 """
-Builder Worker — builder_synth_v1
+Builder Worker — builder_synth_v2
 
 Consumes synthetic build jobs from Redis queue and executes them.
 Produces ELF binaries + BuildReceipt, then persists results to PostgreSQL.
 
-No git builds. See LOCK.md.
+No git builds. See LOCK_v2.md.
 """
 import os
 import sys
@@ -78,7 +78,7 @@ class BuildWorker:
     def run(self):
         """Main worker loop — blocking pop from Redis queue."""
         self.connect()
-        logger.info("Builder worker v1 started, waiting for jobs...")
+        logger.info("Builder worker v2 started, waiting for jobs...")
         queue_name = "builder:queue"
 
         while True:

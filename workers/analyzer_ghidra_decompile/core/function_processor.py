@@ -12,6 +12,7 @@ This module is pure: no IO, no policy decisions (verdict assigned elsewhere).
 import re
 from typing import Dict, List, Optional, Tuple
 
+from analyzer_ghidra_decompile.core.variable_processor import TEMP_NAME_RE
 from analyzer_ghidra_decompile.policy.profile import Profile
 
 
@@ -57,6 +58,8 @@ _WARNING_PATTERNS: List[Tuple[re.Pattern, str]] = [
      "NON_RETURNING_CALL_MISMODELED"),
     (re.compile(r"switch.*recov", re.I),
      "SWITCH_RECOVERY_FAILED"),
+    (re.compile(r"timed?\s*out|timeout|time.out", re.I),
+     "DECOMPILE_TIMEOUT"),
     # Broad patterns for known Ghidra warnings
     (re.compile(r"could not recover", re.I),
      "SWITCH_RECOVERY_FAILED"),
@@ -124,10 +127,7 @@ def map_warnings(
 # Proxy metrics (§9)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Temp variable name patterns (§9.4)
-_TEMP_NAME_RE = re.compile(
-    r"^(uVar|iVar|bVar|cVar|lVar|sVar|fVar|dVar|ppVar|pVar|auVar|abVar|aiVar)\d+$"
-)
+# Temp variable name patterns (§9.4) — imported from variable_processor (DRY).
 
 
 def count_c_lines(c_raw: Optional[str]) -> int:
@@ -161,7 +161,7 @@ def compute_proxy_metrics(
 
 def is_temp_name(name: str) -> bool:
     """Check if a variable name matches the temp pattern (§9.4)."""
-    return bool(_TEMP_NAME_RE.match(name))
+    return bool(TEMP_NAME_RE.match(name))
 
 
 def compute_fat_function_flag(

@@ -8,7 +8,7 @@ import from here so the two packages can never diverge.
 """
 from __future__ import annotations
 
-NOISE_LIST_VERSION = "1.1"
+NOISE_LIST_VERSION = "1.2"
 
 # ── Init / fini auxiliary names (§8.2) ────────────────────────────────
 
@@ -52,8 +52,11 @@ ALL_AUX_NAMES: frozenset[str] = AUX_INIT_FINI_NAMES | COMPILER_AUX_NAMES
 PLT_SECTION_PREFIXES: tuple[str, ...] = (".plt",)
 
 # ── Stub name patterns ───────────────────────────────────────────────
-
-STUB_NAME_PREFIXES: tuple[str, ...] = ("FUN_",)
+# NOTE: "FUN_" was removed in v1.2 — Ghidra uses FUN_XXXXXXXX as its
+# default name for ANY function lacking a symbol (i.e. every user
+# function in stripped binaries).  PLT stubs are already caught by
+# the section_hint check against PLT_SECTION_PREFIXES.
+STUB_NAME_PREFIXES: tuple[str, ...] = ()
 
 
 # ── GLIBC version-suffix normalization ────────────────────────────────

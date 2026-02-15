@@ -134,6 +134,16 @@ class TestWarningMapping:
         ])
         assert warnings.count("UNKNOWN_CALLING_CONVENTION") == 1
 
+    def test_decompile_timeout(self):
+        """R13: DECOMPILE_TIMEOUT must be produced when Ghidra reports a timeout."""
+        warnings, _ = map_warnings(None, None, ["Decompilation timed out"])
+        assert "DECOMPILE_TIMEOUT" in warnings
+
+    def test_decompile_timeout_variant(self):
+        """Timeout may also appear as 'timeout' in error messages."""
+        warnings, _ = map_warnings(None, None, ["Function analysis timeout"])
+        assert "DECOMPILE_TIMEOUT" in warnings
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Noise classification
@@ -329,6 +339,12 @@ class TestVerdict:
     def test_function_verdict_warn_noise(self):
         v, r = judge_function("OK", [], 0x100, 0x200, True)
         assert v == FunctionVerdict.WARN
+
+    def test_function_verdict_fail_timeout(self):
+        """R13: DECOMPILE_TIMEOUT should produce a FAIL verdict."""
+        v, r = judge_function("OK", ["DECOMPILE_TIMEOUT"], 0x100, 0x200, False)
+        assert v == FunctionVerdict.FAIL
+        assert "DECOMPILE_TIMEOUT" in r
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
