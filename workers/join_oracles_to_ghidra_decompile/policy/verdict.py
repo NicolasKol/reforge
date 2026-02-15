@@ -64,38 +64,41 @@ def is_high_confidence(
     cfg_completeness: Optional[str],
     warning_tags: List[str],
     fatal_warnings: tuple[str, ...],
-) -> bool:
-    """Return True iff the joined row qualifies as high-confidence.
+) -> tuple[bool, Optional[str]]:
+    """Return (is_hc, reject_reason) for high-confidence classification.
 
     High-confidence rows form the "gold" subset for LLM evaluation
     tasks where we need maximal alignment certainty.
+
+    The *reject_reason* is the **first** gate that fails, or ``None``
+    when all gates pass.  This provides a failure-ladder for diagnostics.
     """
     # DWARF oracle must be ACCEPT (not WARN — provenance uncertainty)
     if dwarf_oracle_verdict != "ACCEPT":
-        return False
+        return False, "ORACLE_NOT_ACCEPT"
 
     # Alignment: perfect unique match
     if align_verdict != "MATCH":
-        return False
+        return False, "ALIGN_NOT_MATCH"
     if align_n_candidates != 1:
-        return False
-    if align_overlap_ratio is None or align_overlap_ratio < 1.0:
-        return False
+        return False, "ALIGN_NOT_UNIQUE"
+    if align_overlap_ratio is None or align_overlap_ratio < 0.95:
+        return False, "ALIGN_RATIO_LOW"
 
     # Ghidra join: strong overlap
     if ghidra_match_kind != GhidraMatchKind.JOINED_STRONG.value:
-        return False
+        return False, "NOT_JOINED_STRONG"
 
     # Not noise / infrastructure
     if is_external_block or is_thunk or is_aux_function or is_import_proxy:
-        return False
+        return False, "IS_NOISE_FUNCTION"
 
     # CFG completeness must not be LOW
     if cfg_completeness == "LOW":
-        return False
+        return False, "CFG_LOW"
 
     # No fatal warnings
     if any(w in fatal_warnings for w in warning_tags):
-        return False
+        return False, "FATAL_WARNING"
 
-    return True
+    return True, None

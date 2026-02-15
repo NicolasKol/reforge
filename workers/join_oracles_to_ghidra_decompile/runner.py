@@ -22,8 +22,13 @@ from join_oracles_to_ghidra_decompile.core.diagnostics import (
     build_variable_stubs,
 )
 from join_oracles_to_ghidra_decompile.core.function_table import (
+    apply_eligibility,
     build_dwarf_function_table,
     build_ghidra_function_table,
+)
+from join_oracles_to_ghidra_decompile.core.invariants import (
+    check_invariants,
+    check_report_invariants,
 )
 from join_oracles_to_ghidra_decompile.io.loader import (
     cross_validate_sha256,
@@ -135,6 +140,11 @@ def run_join_oracles_ghidra(
     dwarf_table = build_dwarf_function_table(oracle_functions, align_pairs)
     log.info("Stage 1 complete — %d DWARF functions indexed", len(dwarf_table))
 
+    # ── Stage 1.5: Eligibility classification (Phase 0) ──────────────────
+    excl_counts = apply_eligibility(dwarf_table, profile.aux_function_names)
+    if excl_counts:
+        log.info("Eligibility exclusions: %s", excl_counts)
+
     # ── Stage 2: Build Ghidra function table ──────────────────────────────
     image_base = ghidra_report.get("image_base") or 0
     ghidra_table, interval_index = build_ghidra_function_table(
@@ -159,8 +169,20 @@ def run_join_oracles_ghidra(
     )
     joined_variables = build_variable_stubs(joined_functions)
 
+    # ── Invariant checks ──────────────────────────────────────────────────
+    violations = check_invariants(joined_functions)
+    if violations:
+        log.warning("Pipeline invariant violations: %d", len(violations))
+
     # ── Report ────────────────────────────────────────────────────────────
     report = build_join_report(joined_functions, build_ctx, profile)
+
+    # ── Report-level invariant checks ─────────────────────────────────────
+    report_violations = check_report_invariants(report)
+    if report_violations:
+        log.warning("Report invariant violations: %d", len(report_violations))
+        violations.extend(report_violations)
+
     log.info(
         "Join report: %d total, %d joined, %d HC (%.1f%%)",
         report.yield_counts.n_dwarf_funcs,

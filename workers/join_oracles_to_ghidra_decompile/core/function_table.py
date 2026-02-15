@@ -56,6 +56,11 @@ class DwarfFunctionRow:
     align_reason_tags: List[str] = field(default_factory=list)
     is_non_target: bool = False
 
+    # Eligibility classification (Phase 0 — set after table build)
+    eligible_for_join: bool = True
+    eligible_for_gold: bool = False
+    exclusion_reason: Optional[str] = None
+
 
 def _parse_ranges(raw_ranges: List[dict]) -> List[Tuple[int, int]]:
     """Convert oracle range dicts with hex strings to (int, int) tuples."""
@@ -156,6 +161,17 @@ def build_dwarf_function_table(
         ):
             qw = align_overlap_ratio / align_n_candidates
 
+        # Bounds assertion — catch upstream bugs deterministically.
+        _QW_EPS = 1e-9
+        if align_verdict == "MATCH" and qw != 0.0:
+            if not (-_QW_EPS <= qw <= 1.0 + _QW_EPS):
+                raise ValueError(
+                    f"quality_weight out of [0, 1] bounds: {qw:.9f} "
+                    f"(function_id={fid}, overlap_ratio={align_overlap_ratio}, "
+                    f"n_candidates={align_n_candidates})"
+                )
+            qw = max(0.0, min(qw, 1.0))  # clamp within tolerance
+
         name = func.get("name") or func.get("linkage_name")
 
         row = DwarfFunctionRow(
@@ -178,7 +194,10 @@ def build_dwarf_function_table(
             align_n_candidates=align_n_candidates,
             quality_weight=qw,
             align_reason_tags=align_reason_tags,
-            is_non_target=fid in non_target_ids,
+            # Only mark non-target when function actually HAS ranges.
+            # Rangeless functions in alignment non_targets are NO_RANGE,
+            # not policy NON_TARGET — eligibility checks has_range first.
+            is_non_target=fid in non_target_ids and has_range,
         )
         table[fid] = row
 
@@ -387,3 +406,46 @@ def build_ghidra_function_table(
         len(interval_index),
     )
     return table, interval_index
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Eligibility stamping (Phase 0)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def apply_eligibility(
+    dwarf_table: Dict[str, DwarfFunctionRow],
+    aux_names: tuple | frozenset = (),
+) -> Dict[str, int]:
+    """Stamp ``eligible_for_join``, ``eligible_for_gold``, ``exclusion_reason``
+    on every row in *dwarf_table* (mutates in-place).
+
+    Returns a counter dict of exclusion reasons for reporting.
+    """
+    from join_oracles_to_ghidra_decompile.policy.eligibility import (
+        classify_eligibility,
+    )
+
+    reason_counts: Dict[str, int] = {}
+
+    for row in dwarf_table.values():
+        ej, eg, reason = classify_eligibility(
+            has_range=row.has_range,
+            is_non_target=row.is_non_target,
+            oracle_verdict=row.oracle_verdict,
+            dwarf_name=row.name,
+            aux_names=aux_names,
+        )
+        row.eligible_for_join = ej
+        row.eligible_for_gold = eg
+        row.exclusion_reason = reason
+
+        if reason is not None:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    n_ej = sum(1 for r in dwarf_table.values() if r.eligible_for_join)
+    n_eg = sum(1 for r in dwarf_table.values() if r.eligible_for_gold)
+    log.info(
+        "Eligibility: %d total, %d eligible-for-join, %d eligible-for-gold",
+        len(dwarf_table), n_ej, n_eg,
+    )
+    return reason_counts

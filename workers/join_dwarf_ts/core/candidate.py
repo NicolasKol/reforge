@@ -83,15 +83,19 @@ def score_candidates(
 
     for ts_func in ts_functions:
         overlap_count = 0
+        consumed: set = set()  # origins already counted for this candidate
 
         # Scan .i lines within the TS function span
         for i_line in range(ts_func.start_line, ts_func.end_line + 1):
             origin = query_forward(origin_map, i_line)
             if origin is None:
                 continue
+            if origin in consumed:
+                continue  # prevent double-counting same DWARF evidence
             count = dwarf_evidence.get(origin, 0)
             if count > 0:
                 overlap_count += count
+                consumed.add(origin)
 
         if overlap_count == 0:
             continue

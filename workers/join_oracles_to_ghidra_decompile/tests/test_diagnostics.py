@@ -13,8 +13,12 @@ from join_oracles_to_ghidra_decompile.core.diagnostics import (
     build_variable_stubs,
 )
 from join_oracles_to_ghidra_decompile.core.function_table import (
+    apply_eligibility,
     build_dwarf_function_table,
     build_ghidra_function_table,
+)
+from join_oracles_to_ghidra_decompile.core.invariants import (
+    check_report_invariants,
 )
 from join_oracles_to_ghidra_decompile.io.schema import (
     JoinedFunctionRow,
@@ -41,6 +45,7 @@ def _run_full_join(oracle_functions, alignment_pairs,
                    ghidra_functions, ghidra_cfg, ghidra_variables):
     profile = JoinOraclesGhidraProfile.v1()
     dwarf_table = build_dwarf_function_table(oracle_functions, alignment_pairs)
+    apply_eligibility(dwarf_table, profile.aux_function_names)
     ghidra_table, interval_index = build_ghidra_function_table(
         ghidra_functions, ghidra_cfg, ghidra_variables,
     )
@@ -97,7 +102,7 @@ class TestJoinedFunctionRows:
 
     def test_not_high_confidence_reject(self, oracle_functions, alignment_pairs,
                                          ghidra_functions, ghidra_cfg, ghidra_variables):
-        """REJECT function → not high-confidence and is_non_target."""
+        """REJECT function with no ranges → NO_RANGE exclusion, not non-target."""
         rows, _ = _run_full_join(
             oracle_functions, alignment_pairs,
             ghidra_functions, ghidra_cfg, ghidra_variables,
@@ -105,7 +110,9 @@ class TestJoinedFunctionRows:
         by_fid = {r.dwarf_function_id: r for r in rows}
         r = by_fid["cu0:0x400"]
         assert r.is_high_confidence is False
-        assert r.is_non_target is True
+        # Rangeless functions are excluded as NO_RANGE, not NON_TARGET
+        assert r.is_non_target is False
+        assert r.exclusion_reason == "NO_RANGE"
 
     def test_no_range_row_present(self, oracle_functions, alignment_pairs,
                                    ghidra_functions, ghidra_cfg, ghidra_variables):
@@ -173,7 +180,8 @@ class TestJoinReport:
         )
         report = build_join_report(rows, _make_ctx(), profile)
 
-        assert report.high_confidence.total == 4
+        # Denominator is now eligible_for_gold (2: add + multiply)
+        assert report.high_confidence.total == 2
         # At least 'add' should be high-confidence
         assert report.high_confidence.high_confidence_count >= 1
         assert report.high_confidence.yield_rate > 0
@@ -202,3 +210,36 @@ class TestJoinReport:
         assert "NO_RANGE" in report.yield_by_match_kind
         # At least JOINED_STRONG should be present
         assert "JOINED_STRONG" in report.yield_by_match_kind
+
+    def test_yield_by_align_verdict_no_range_not_conflated(
+        self, oracle_functions, alignment_pairs,
+        ghidra_functions, ghidra_cfg, ghidra_variables,
+    ):
+        """Regression: NO_RANGE rows must NOT appear as NON_TARGET in
+        yield_by_align_verdict.  They must be bucketed under 'NO_RANGE'."""
+        rows, profile = _run_full_join(
+            oracle_functions, alignment_pairs,
+            ghidra_functions, ghidra_cfg, ghidra_variables,
+        )
+        report = build_join_report(rows, _make_ctx(), profile)
+
+        # Fixture has 1 NO_RANGE function, 0 real non-targets
+        assert report.exclusion_summary.n_no_range == 1
+        assert report.exclusion_summary.n_non_target == 0
+
+        # yield_by_align_verdict must reflect exclusion_summary
+        assert report.yield_by_align_verdict.get("NO_RANGE", 0) == 1
+        assert report.yield_by_align_verdict.get("NON_TARGET", 0) == 0
+
+    def test_report_passes_all_report_invariants(
+        self, oracle_functions, alignment_pairs,
+        ghidra_functions, ghidra_cfg, ghidra_variables,
+    ):
+        """The fixture pipeline report must pass all report-level invariants."""
+        rows, profile = _run_full_join(
+            oracle_functions, alignment_pairs,
+            ghidra_functions, ghidra_cfg, ghidra_variables,
+        )
+        report = build_join_report(rows, _make_ctx(), profile)
+        violations = check_report_invariants(report)
+        assert violations == [], f"Report invariant violations: {violations}"

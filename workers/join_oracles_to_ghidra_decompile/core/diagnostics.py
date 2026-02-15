@@ -15,18 +15,28 @@ from join_oracles_to_ghidra_decompile.core.address_join import JoinResult
 from join_oracles_to_ghidra_decompile.core.build_context import BuildContext
 from join_oracles_to_ghidra_decompile.io.schema import (
     BuildContextSummary,
+    CollisionSummary,
+    ConfidenceFunnel,
     DecompilerDistributions,
+    ExclusionSummary,
     HighConfidenceSlice,
     JoinedFunctionRow,
     JoinedVariableRow,
     JoinReport,
     JoinYieldCounts,
+    QualityWeightAudit,
     VariableJoinStatus,
 )
 from join_oracles_to_ghidra_decompile.policy.profile import (
     JoinOraclesGhidraProfile,
 )
 from join_oracles_to_ghidra_decompile.policy.verdict import is_high_confidence
+
+from data.binning import (
+    overlap_ratio_bin,
+    quality_weight_bin_detailed,
+)
+from data.noise_lists import normalize_glibc_name
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +47,8 @@ log = logging.getLogger(__name__)
 
 def _classify_aux(ghidra_name: str, aux_names: tuple) -> bool:
     """Return True if the Ghidra function name is a known aux function."""
-    return ghidra_name.strip() in aux_names
+    name_clean = ghidra_name.strip()
+    return normalize_glibc_name(name_clean) in aux_names
 
 
 def _classify_import_proxy(
@@ -105,8 +116,8 @@ def build_joined_function_rows(
         temp_v = grow.temp_var_count if grow else 0
         ph_rate = grow.placeholder_type_rate if grow else 0.0
 
-        # High-confidence gate
-        hc = is_high_confidence(
+        # High-confidence gate (returns bool + reject reason)
+        hc, hc_reject = is_high_confidence(
             dwarf_oracle_verdict=drow.oracle_verdict,
             align_verdict=drow.align_verdict,
             align_n_candidates=drow.align_n_candidates,
@@ -119,6 +130,21 @@ def build_joined_function_rows(
             cfg_completeness=cfg_comp,
             warning_tags=w_tags,
             fatal_warnings=profile.fatal_warnings,
+        )
+
+        # Confidence tier (orthogonal to is_high_confidence)
+        tier = _assign_confidence_tier(
+            hc=hc,
+            match_kind=jr.match_kind,
+            eligible_for_gold=drow.eligible_for_gold,
+        )
+
+        # Upstream collapse reason
+        collapse = _detect_upstream_collapse(drow)
+
+        # Decompiler quality flags
+        dq_flags = _decompiler_quality_flags(
+            cfg_comp, w_tags, goto_c, loc, ph_rate, profile.fatal_warnings,
         )
 
         row = JoinedFunctionRow(
@@ -176,6 +202,15 @@ def build_joined_function_rows(
             is_external_block=is_ext,
             is_non_target=drow.is_non_target,
             is_thunk=is_thk,
+            # Eligibility
+            eligible_for_join=drow.eligible_for_join,
+            eligible_for_gold=drow.eligible_for_gold,
+            exclusion_reason=drow.exclusion_reason,
+            # Confidence
+            confidence_tier=tier,
+            hc_reject_reason=hc_reject,
+            upstream_collapse_reason=collapse,
+            decompiler_quality_flags=dq_flags,
         )
         rows.append(row)
 
@@ -183,6 +218,85 @@ def build_joined_function_rows(
     _compute_many_to_one(rows)
 
     return rows
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Confidence tier assignment
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _assign_confidence_tier(
+    hc: bool,
+    match_kind: str,
+    eligible_for_gold: bool,
+) -> str:
+    """Assign a confidence tier label (orthogonal to is_high_confidence).
+
+    GOLD   — is_high_confidence is True.
+    SILVER — not HC but JOINED_STRONG and gold-eligible.
+    BRONZE — JOINED_STRONG or JOINED_WEAK but not gold-eligible.
+    ""     — everything else (NO_RANGE, NO_MATCH, MULTI_MATCH).
+    """
+    if hc:
+        return "GOLD"
+    if match_kind == "JOINED_STRONG" and eligible_for_gold:
+        return "SILVER"
+    if match_kind in ("JOINED_STRONG", "JOINED_WEAK"):
+        return "BRONZE"
+    return ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Upstream collapse detection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _detect_upstream_collapse(drow) -> Optional[str]:
+    """Detect when a function was lost by upstream oracle/alignment stages.
+
+    Returns a reason string, or None if no upstream collapse detected.
+    """
+    if not drow.has_range:
+        return "NO_DWARF_RANGE"
+    if drow.is_non_target:
+        return "ALIGNMENT_NON_TARGET"
+    if drow.oracle_verdict == "REJECT":
+        return "DWARF_ORACLE_REJECT"
+    if drow.align_verdict == "DISAPPEAR":
+        return "ALIGNMENT_DISAPPEAR"
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Decompiler quality flags
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_HIGH_GOTO_DENSITY_THRESHOLD = 0.1
+_HIGH_PLACEHOLDER_THRESHOLD = 0.3
+
+def _decompiler_quality_flags(
+    cfg_completeness: Optional[str],
+    warning_tags: List[str],
+    goto_count: int,
+    loc_decompiled: int,
+    placeholder_type_rate: float,
+    fatal_warnings: tuple[str, ...],
+) -> List[str]:
+    """Return a list of decompiler quality concern flags."""
+    flags: List[str] = []
+
+    if cfg_completeness == "LOW":
+        flags.append("CFG_LOW")
+
+    if any(w in fatal_warnings for w in warning_tags):
+        flags.append("FATAL_WARNING")
+
+    goto_density = goto_count / max(loc_decompiled, 1)
+    if goto_density > _HIGH_GOTO_DENSITY_THRESHOLD:
+        flags.append("HIGH_GOTO_DENSITY")
+
+    if placeholder_type_rate > _HIGH_PLACEHOLDER_THRESHOLD:
+        flags.append("HIGH_PLACEHOLDER_TYPES")
+
+    return flags
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -219,12 +333,9 @@ def _percentiles(
 
 
 def _quality_weight_bin(qw: float) -> str:
-    """Bin a quality_weight value."""
-    if qw >= 0.8:
-        return "[0.8,1.0]"
-    if qw >= 0.5:
-        return "[0.5,0.8)"
-    return "[0,0.5)"
+    """Bin a quality_weight value (DEPRECATED — kept for reference)."""
+    # Superseded by data.binning.quality_weight_bin_detailed
+    raise NotImplementedError("Use data.binning.quality_weight_bin_detailed")
 
 
 def _n_candidates_bin(n: Optional[int]) -> str:
@@ -273,38 +384,130 @@ def build_join_report(
         n_no_match=n_no_match,
     )
 
-    # ── High-confidence slice ─────────────────────────────────────────────
-    hc_count = sum(1 for r in rows if r.is_high_confidence)
-    hc_rate = hc_count / max(n_total, 1)
+    # ── Exclusion summary (Phase 0) ───────────────────────────────────────
+    excl_reason_counts: Counter = Counter()
+    n_eligible_join = 0
+    n_eligible_gold = 0
+    for r in rows:
+        if r.exclusion_reason:
+            excl_reason_counts[r.exclusion_reason] += 1
+        if r.eligible_for_join:
+            n_eligible_join += 1
+        if r.eligible_for_gold:
+            n_eligible_gold += 1
 
-    # By opt (the join is single-binary so opt is constant, but kept for
-    # downstream aggregations across multiple invocations)
+    exclusion_summary = ExclusionSummary(
+        n_total_dwarf=n_total,
+        n_no_range=excl_reason_counts.get("NO_RANGE", 0),
+        n_non_target=excl_reason_counts.get("NON_TARGET", 0),
+        n_noise_aux=excl_reason_counts.get("NOISE_AUX", 0),
+        n_oracle_reject=sum(
+            1 for r in rows
+            if r.eligible_for_join and not r.eligible_for_gold
+            and r.dwarf_oracle_verdict != "ACCEPT"
+        ),
+        n_eligible_for_join=n_eligible_join,
+        n_eligible_for_gold=n_eligible_gold,
+        by_exclusion_reason=dict(sorted(excl_reason_counts.items())),
+    )
+
+    # ── High-confidence slice (denominator: eligible_for_gold) ────────────
+    hc_count = sum(1 for r in rows if r.is_high_confidence)
+    hc_denom = max(n_eligible_gold, 1)
+    hc_rate = hc_count / hc_denom
+
+    # By opt
     hc_by_opt: Dict[str, float] = {}
     opt_groups: Dict[str, List[JoinedFunctionRow]] = {}
     for r in rows:
         opt_groups.setdefault(r.opt, []).append(r)
     for opt, group in opt_groups.items():
         gc = sum(1 for g in group if g.is_high_confidence)
-        hc_by_opt[opt] = round(gc / max(len(group), 1), 6)
+        gold_in_opt = sum(1 for g in group if g.eligible_for_gold)
+        hc_by_opt[opt] = round(gc / max(gold_in_opt, 1), 6)
 
     high_confidence = HighConfidenceSlice(
-        total=n_total,
+        total=n_eligible_gold,
         high_confidence_count=hc_count,
         yield_rate=round(hc_rate, 6),
         by_opt=hc_by_opt,
     )
 
+    # ── Confidence funnel ─────────────────────────────────────────────────
+    gold_eligible_rows = [r for r in rows if r.eligible_for_gold]
+    funnel = _build_confidence_funnel(gold_eligible_rows, profile)
+
+    # ── Collision summary ─────────────────────────────────────────────────
+    collision = _build_collision_summary(rows)
+
     # ── Stratifications ───────────────────────────────────────────────────
     yield_by_align: Counter = Counter()
     yield_by_ncand: Counter = Counter()
     yield_by_qw: Counter = Counter()
+    yield_by_overlap: Counter = Counter()
     yield_by_opt: Counter = Counter()
 
+    # ── Quality-weight audit counters ───────────────────────────────────────
+    n_qw_gt_1 = 0
+    n_qw_lt_0 = 0
+    max_qw = 0.0
+    n_overlap_gt_1 = 0
+    max_overlap = 0.0
+
     for r in rows:
-        yield_by_align[r.align_verdict or "NONE"] += 1
+        # Align-verdict histogram (exclusion-aware)
+        if r.exclusion_reason:
+            yield_by_align[r.exclusion_reason] += 1
+        else:
+            yield_by_align[r.align_verdict or "NONE"] += 1
+
         yield_by_ncand[_n_candidates_bin(r.align_n_candidates)] += 1
-        yield_by_qw[_quality_weight_bin(r.quality_weight)] += 1
+
+        # quality_weight bins — use DWARF has_range (derived from
+        # exclusion_reason == "NO_RANGE" which is the DWARF property,
+        # NOT the join-outcome ghidra_match_kind).
+        dwarf_has_range = r.exclusion_reason != "NO_RANGE"
+        qw_for_bin: Optional[float] = (
+            r.quality_weight if r.align_verdict == "MATCH" else None
+        )
+        yield_by_qw[
+            quality_weight_bin_detailed(
+                qw_for_bin,
+                has_range=dwarf_has_range,
+                align_verdict=r.align_verdict,
+            )
+        ] += 1
+
+        # align_overlap_ratio bins
+        yield_by_overlap[
+            overlap_ratio_bin(
+                r.align_overlap_ratio
+                if r.align_verdict == "MATCH"
+                else None
+            )
+        ] += 1
+
         yield_by_opt[r.opt] += 1
+
+        # Audit counters
+        if r.quality_weight > 1.0:
+            n_qw_gt_1 += 1
+        if r.quality_weight < 0.0:
+            n_qw_lt_0 += 1
+        max_qw = max(max_qw, r.quality_weight)
+
+        if r.align_overlap_ratio is not None:
+            if r.align_overlap_ratio > 1.0:
+                n_overlap_gt_1 += 1
+            max_overlap = max(max_overlap, r.align_overlap_ratio)
+
+    qw_audit = QualityWeightAudit(
+        n_quality_weight_gt_1=n_qw_gt_1,
+        n_quality_weight_lt_0=n_qw_lt_0,
+        max_quality_weight=round(max_qw, 9),
+        n_align_overlap_ratio_gt_1=n_overlap_gt_1,
+        max_align_overlap_ratio=round(max_overlap, 9),
+    )
 
     # ── Decompiler distributions ──────────────────────────────────────────
     cfg_comp_counter: Counter = Counter()
@@ -366,11 +569,104 @@ def build_join_report(
         ),
         yield_counts=yield_counts,
         high_confidence=high_confidence,
+        exclusion_summary=exclusion_summary,
+        confidence_funnel=funnel,
+        collision_summary=collision,
         yield_by_align_verdict=dict(sorted(yield_by_align.items())),
         yield_by_n_candidates_bin=dict(sorted(yield_by_ncand.items())),
         yield_by_quality_weight_bin=dict(sorted(yield_by_qw.items())),
+        yield_by_align_overlap_ratio_bin=dict(sorted(yield_by_overlap.items())),
         yield_by_opt=dict(sorted(yield_by_opt.items())),
         yield_by_match_kind=dict(sorted(match_counts.items())),
+        quality_weight_audit=qw_audit,
         decompiler=decompiler,
         variable_join=var_status,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Confidence funnel builder
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_confidence_funnel(
+    gold_eligible_rows: List[JoinedFunctionRow],
+    profile: JoinOraclesGhidraProfile,
+) -> ConfidenceFunnel:
+    """Build gate-by-gate attrition counts for the confidence funnel.
+
+    Each counter represents the number of rows that **pass** that gate
+    (cumulative AND of all prior gates).
+    """
+    n = len(gold_eligible_rows)
+
+    # Gate 1: oracle ACCEPT (should be all, since eligible_for_gold requires it)
+    pass_oracle = [r for r in gold_eligible_rows if r.dwarf_oracle_verdict == "ACCEPT"]
+    # Gate 2: align MATCH
+    pass_align = [r for r in pass_oracle if r.align_verdict == "MATCH"]
+    # Gate 3: unique candidate
+    pass_unique = [r for r in pass_align if r.align_n_candidates == 1]
+    # Gate 4: overlap ratio >= 0.95
+    pass_ratio = [
+        r for r in pass_unique
+        if r.align_overlap_ratio is not None and r.align_overlap_ratio >= 0.95
+    ]
+    # Gate 5: JOINED_STRONG
+    pass_strong = [r for r in pass_ratio if r.ghidra_match_kind == "JOINED_STRONG"]
+    # Gate 6: not noise
+    pass_noise = [
+        r for r in pass_strong
+        if not (r.is_external_block or r.is_thunk or r.is_aux_function or r.is_import_proxy)
+    ]
+    # Gate 7: CFG not LOW
+    pass_cfg = [r for r in pass_noise if r.cfg_completeness != "LOW"]
+    # Gate 8: no fatal warnings
+    fatal = set(profile.fatal_warnings)
+    pass_fatal = [r for r in pass_cfg if not any(w in fatal for w in r.warning_tags)]
+
+    return ConfidenceFunnel(
+        n_eligible_for_gold=n,
+        n_pass_oracle_accept=len(pass_oracle),
+        n_pass_align_match=len(pass_align),
+        n_pass_align_unique=len(pass_unique),
+        n_pass_align_ratio=len(pass_ratio),
+        n_pass_joined_strong=len(pass_strong),
+        n_pass_not_noise=len(pass_noise),
+        n_pass_cfg_not_low=len(pass_cfg),
+        n_pass_no_fatal_warnings=len(pass_fatal),
+        n_high_confidence=len(pass_fatal),  # final gate = HC
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Collision summary builder
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_collision_summary(
+    rows: List[JoinedFunctionRow],
+    top_n: int = 5,
+) -> CollisionSummary:
+    """Build many-to-one collision diagnostics."""
+    ghidra_to_dwarf: Dict[str, List[str]] = {}
+    for r in rows:
+        if r.ghidra_func_id:
+            ghidra_to_dwarf.setdefault(r.ghidra_func_id, []).append(
+                r.dwarf_function_id
+            )
+
+    n_unique = len(ghidra_to_dwarf)
+    multi = {gid: dids for gid, dids in ghidra_to_dwarf.items() if len(dids) >= 2}
+    max_per = max((len(dids) for dids in ghidra_to_dwarf.values()), default=0)
+
+    # Top collisions (sorted by count descending)
+    sorted_multi = sorted(multi.items(), key=lambda x: -len(x[1]))[:top_n]
+    top_collisions = [
+        {"ghidra_func_id": gid, "n_dwarf": len(dids), "dwarf_ids": dids}
+        for gid, dids in sorted_multi
+    ]
+
+    return CollisionSummary(
+        n_unique_ghidra_funcs_matched=n_unique,
+        n_ghidra_funcs_with_multi_dwarf=len(multi),
+        max_dwarf_per_ghidra=max_per,
+        top_collisions=top_collisions,
     )

@@ -58,6 +58,12 @@ class JoinedFunctionRow(BaseModel):
     align_gap_count: Optional[int] = None
     align_n_candidates: Optional[int] = None
     quality_weight: float = 0.0
+    """Overlap fidelity × ambiguity penalty.
+
+    Only meaningful when ``align_verdict == "MATCH"``; otherwise the
+    stored ``0.0`` is a placeholder and should be treated as missing.
+    Formula: ``overlap_ratio / n_candidates`` (clamped to [0, 1]).
+    """
     align_reason_tags: List[str] = Field(default_factory=list)
 
     # ── Ghidra mapping result ─────────────────────────────────────────────
@@ -94,6 +100,17 @@ class JoinedFunctionRow(BaseModel):
     is_non_target: bool = False
     is_thunk: bool = False
     fat_function_multi_dwarf: bool = False
+
+    # ── Eligibility (Phase 0) ─────────────────────────────────────────────
+    eligible_for_join: bool = True
+    eligible_for_gold: bool = False
+    exclusion_reason: Optional[str] = None
+
+    # ── Confidence (Phase 2) ──────────────────────────────────────────────
+    confidence_tier: str = ""               # GOLD | SILVER | BRONZE | ""
+    hc_reject_reason: Optional[str] = None  # first gate that failed HC
+    upstream_collapse_reason: Optional[str] = None
+    decompiler_quality_flags: List[str] = Field(default_factory=list)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -158,6 +175,58 @@ class VariableJoinStatus(BaseModel):
     n_stub_rows: int = 0
 
 
+class ExclusionSummary(BaseModel):
+    """Phase 0 eligibility breakdown for the join report."""
+
+    n_total_dwarf: int = 0
+    n_no_range: int = 0
+    n_non_target: int = 0
+    n_noise_aux: int = 0          # DWARF-side name in ALL_AUX_NAMES
+    n_oracle_reject: int = 0      # verdict != ACCEPT (gold-ineligible, still join-eligible)
+    n_eligible_for_join: int = 0
+    n_eligible_for_gold: int = 0
+
+    by_exclusion_reason: Dict[str, int] = Field(default_factory=dict)
+
+
+class ConfidenceFunnel(BaseModel):
+    """Gate-by-gate attrition from eligible_for_gold → is_high_confidence."""
+
+    n_eligible_for_gold: int = 0
+    n_pass_oracle_accept: int = 0
+    n_pass_align_match: int = 0
+    n_pass_align_unique: int = 0
+    n_pass_align_ratio: int = 0
+    n_pass_joined_strong: int = 0
+    n_pass_not_noise: int = 0
+    n_pass_cfg_not_low: int = 0
+    n_pass_no_fatal_warnings: int = 0
+    n_high_confidence: int = 0
+
+
+class QualityWeightAudit(BaseModel):
+    """Bounds audit for quality_weight and align_overlap_ratio.
+
+    Non-zero counts are correctness alarms — the upstream pipeline
+    produced values outside the expected [0, 1] range.
+    """
+
+    n_quality_weight_gt_1: int = 0
+    n_quality_weight_lt_0: int = 0
+    max_quality_weight: float = 0.0
+    n_align_overlap_ratio_gt_1: int = 0
+    max_align_overlap_ratio: float = 0.0
+
+
+class CollisionSummary(BaseModel):
+    """Many-to-one (DWARF→Ghidra) collision diagnostics."""
+
+    n_unique_ghidra_funcs_matched: int = 0
+    n_ghidra_funcs_with_multi_dwarf: int = 0
+    max_dwarf_per_ghidra: int = 0
+    top_collisions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class BuildContextSummary(BaseModel):
     """Build context provenance in the report."""
 
@@ -196,12 +265,29 @@ class JoinReport(BaseModel):
         default_factory=HighConfidenceSlice
     )
 
+    # ── Eligibility (Phase 0) ─────────────────────────────────────────────
+    exclusion_summary: ExclusionSummary = Field(
+        default_factory=ExclusionSummary
+    )
+    confidence_funnel: ConfidenceFunnel = Field(
+        default_factory=ConfidenceFunnel
+    )
+    collision_summary: CollisionSummary = Field(
+        default_factory=CollisionSummary
+    )
+
     # ── Stratifications ───────────────────────────────────────────────────
     yield_by_align_verdict: Dict[str, int] = Field(default_factory=dict)
     yield_by_n_candidates_bin: Dict[str, int] = Field(default_factory=dict)
     yield_by_quality_weight_bin: Dict[str, int] = Field(default_factory=dict)
+    yield_by_align_overlap_ratio_bin: Dict[str, int] = Field(default_factory=dict)
     yield_by_opt: Dict[str, int] = Field(default_factory=dict)
     yield_by_match_kind: Dict[str, int] = Field(default_factory=dict)
+
+    # ── Quality-weight audit ──────────────────────────────────────────────
+    quality_weight_audit: QualityWeightAudit = Field(
+        default_factory=QualityWeightAudit
+    )
 
     # ── Decompiler distributions ──────────────────────────────────────────
     decompiler: DecompilerDistributions = Field(

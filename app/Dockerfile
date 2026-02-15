@@ -35,6 +35,9 @@ COPY workers/join_oracles_to_ghidra_decompile/ /code/join_oracles_to_ghidra_deco
 # Copy minimal data/ module (only enums + paths, no pandas-heavy loader)
 COPY data/enums.py /code/data/enums.py
 COPY data/paths.py /code/data/paths.py
+COPY data/noise_lists.py /code/data/noise_lists.py
+COPY data/binning.py /code/data/binning.py
+
 RUN echo '"""Minimal data package stub for container."""' > /code/data/__init__.py
 
 ENV PYTHONPATH=/code

@@ -41,6 +41,15 @@ from .metrics import (
     enrich_pairs,
 )
 
+from .binning import (
+    overlap_ratio_bin,
+    quality_weight_bin,
+    quality_weight_bin_detailed,
+    OVERLAP_RATIO_BIN_ORDER,
+    QUALITY_WEIGHT_BIN_DETAILED_ORDER,
+    QUALITY_WEIGHT_BIN_ORDER,
+)
+
 __all__ = [
     # loader
     "load_dataset",
@@ -58,6 +67,13 @@ __all__ = [
     "compute_transitions",
     "compute_verdict_rates",
     "compute_reason_shift",
+    # binning
+    "quality_weight_bin",
+    "quality_weight_bin_detailed",
+    "overlap_ratio_bin",
+    "QUALITY_WEIGHT_BIN_ORDER",
+    "QUALITY_WEIGHT_BIN_DETAILED_ORDER",
+    "OVERLAP_RATIO_BIN_ORDER",
     # meta
     "PACKAGE_NAME",
     "SCHEMA_VERSION",

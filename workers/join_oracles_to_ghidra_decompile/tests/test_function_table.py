@@ -33,7 +33,10 @@ class TestDwarfFunctionTable:
 
         assert row.has_range is False
         assert row.oracle_verdict == "REJECT"
-        assert row.is_non_target is True
+        # Rangeless functions are NOT non-target: NO_RANGE takes priority
+        assert row.is_non_target is False
+        # align_verdict still reflects upstream alignment stage
+        assert row.align_verdict == "NON_TARGET"
 
     def test_alignment_match_evidence(self, oracle_functions, alignment_pairs):
         table = build_dwarf_function_table(oracle_functions, alignment_pairs)

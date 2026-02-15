@@ -201,9 +201,15 @@ def join_dwarf_to_ghidra(
         pc_ratio = best_overlap / max(drow.total_range_bytes, 1)
 
         # ── Near-tie detection ────────────────────────────────────────────
+        # Filter out thunk / external / PLT stubs before tie comparison
+        # to prevent infrastructure overlaps from triggering false MULTI_MATCH.
+        substantive = [
+            c for c in candidates[1:]
+            if not c.is_thunk and not c.is_external_block
+        ]
         threshold_bytes = best_overlap * profile.near_tie_epsilon
         near_ties = [
-            c for c in candidates[1:]
+            c for c in substantive
             if (best_overlap - c.overlap_bytes) <= threshold_bytes
         ]
         n_near_ties = len(near_ties)
