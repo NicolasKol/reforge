@@ -37,6 +37,15 @@ COPY data/enums.py /code/data/enums.py
 COPY data/paths.py /code/data/paths.py
 COPY data/noise_lists.py /code/data/noise_lists.py
 COPY data/binning.py /code/data/binning.py
+COPY data/schema.py /code/data/schema.py
+COPY data/loader.py /code/data/loader.py
+COPY data/experiments.py /code/data/experiments.py
+COPY data/llm_contract.py /code/data/llm_contract.py
+COPY data/reporting.py /code/data/reporting.py
+COPY data/scoring.py /code/data/scoring.py
+
+# Copy prompt templates
+COPY workers/llm/ /code/workers/llm/
 
 RUN echo '"""Minimal data package stub for container."""' > /code/data/__init__.py
 

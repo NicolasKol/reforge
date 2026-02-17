@@ -22,7 +22,12 @@ metrics  Derived columns, cross-opt transitions, verdict rates, reason shift.
 PACKAGE_NAME = "reforge_data"
 SCHEMA_VERSION = "0.2"
 
-from .loader import OracleDataset, load_dataset
+from .loader import (
+    GhidraJoinDataset,
+    OracleDataset,
+    load_dataset,
+    load_ghidra_dataset,
+)
 
 from .enums import (
     AlignmentReason,
@@ -53,7 +58,9 @@ from .binning import (
 __all__ = [
     # loader
     "load_dataset",
+    "load_ghidra_dataset",
     "OracleDataset",
+    "GhidraJoinDataset",
     # enums
     "OracleVerdict",
     "OracleBinaryRejectReason",

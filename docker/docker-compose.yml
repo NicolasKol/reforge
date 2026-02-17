@@ -1,52 +1,70 @@
 version: '3.8'
 
+# ─── n8n YAML anchors (COMMENTED OUT — using Python LLM worker) ──────────────
+# x-n8n-env: &n8n-env
+#   DB_TYPE: postgresdb
+#   DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+#   DB_POSTGRESDB_HOST: postgres
+#   DB_POSTGRESDB_PORT: "5432"
+#   DB_POSTGRESDB_USER: ${POSTGRES_USER}
+#   DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+#   DB_POSTGRESDB_SCHEMA: public
+#   N8N_HOST: ${N8N_HOST:-localhost}
+#   N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+#   N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+#   N8N_RUNNERS_ENABLED: "true"
+#   GENERIC_TIMEZONE: ${TIMEZONE:-Europe/Berlin}
+#   TZ: ${TIMEZONE:-Europe/Berlin}
+#   EXECUTIONS_MODE: queue
+#   QUEUE_BULL_REDIS_HOST: redis
+#   QUEUE_BULL_REDIS_PORT: "6379"
+#   QUEUE_BULL_REDIS_DB: "2"
+#   N8N_SECURITY_AUDIT_LOGS_ENABLED: "true"
+#   N8N_DEFAULT_BINARY_DATA_MODE: default
+#
+# x-n8n-volumes: &n8n-volumes
+#   - n8n_data:/home/node/.n8n
+#   - ./local-files:/files
+#   - ../workers:/workers:ro
+
 services:
   # =============================================================================
-  # n8n Orchestration Engine
+  # n8n Main + Worker (COMMENTED OUT — using Python LLM worker instead)
   # =============================================================================
-  n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
-    container_name: reforge-n8n
-    restart: unless-stopped
-    ports:
-      - "${N8N_PORT:-5678}:5678"
-    environment:
-      # Database Configuration
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-      - DB_POSTGRESDB_HOST=postgres
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_USER=${POSTGRES_USER}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
-      - DB_POSTGRESDB_SCHEMA=public
-      # n8n Configuration
-      - N8N_HOST=${N8N_HOST:-localhost}
-      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      - N8N_RUNNERS_ENABLED=true
-      - GENERIC_TIMEZONE=${TIMEZONE:-Europe/Berlin}
-      - TZ=${TIMEZONE:-Europe/Berlin}
-      # Security - Allow command execution for Ghidra integration
-      - N8N_SECURITY_AUDIT_LOGS_ENABLED=true
-      # Binary data handling for large decompilation outputs
-      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
-      - N8N_BINARY_DATA_STORAGE_PATH=/files/binary_data
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - ./local-files:/files
-      - ../workers:/workers:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - reforge-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+  # n8n:
+  #   image: docker.n8n.io/n8nio/n8n:latest
+  #   container_name: reforge-n8n
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${N8N_PORT:-5678}:5678"
+  #   environment:
+  #     <<: *n8n-env
+  #   volumes: *n8n-volumes
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - reforge-network
+  #
+  # n8n-worker:
+  #   image: docker.n8n.io/n8nio/n8n:latest
+  #   command: worker
+  #   restart: unless-stopped
+  #   environment:
+  #     <<: *n8n-env
+  #     N8N_DISABLE_UI: "true"
+  #   volumes: *n8n-volumes
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     n8n:
+  #       condition: service_healthy
+  #   networks:
+  #     - reforge-network
 
   # =============================================================================
   # PostgreSQL - Provenance & State Management
@@ -114,6 +132,7 @@ services:
       - REDIS_PORT=6379
       - BUILDER_WORKSPACE=/tmp/reforge_builds
       - ARTIFACTS_PATH=/files/artifacts
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - ./local-files:/files
       - /var/run/docker.sock:/var/run/docker.sock
@@ -192,8 +211,8 @@ services:
 # Volumes & Networks
 # =============================================================================
 volumes:
-  n8n_data:
-    external: true 
+  # n8n_data:          # COMMENTED OUT — n8n disabled
+  #   external: true
   postgres_data:
     name: reforge_postgres_data
   redis_data:

@@ -180,3 +180,114 @@ class BuildReceipt(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     builds: List[BuildCell] = []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LLM experiment results  (data/results/llm/<experiment_id>/results.jsonl)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class LLMResultRow(BaseModel):
+    """One row of LLM experiment output, appended to a JSONL results file."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Experiment identity
+    experiment_id: str = Field(..., description="e.g. exp01-function-naming")
+    run_id: str = Field(..., description="Controller-provided run ID")
+    job_id: str = Field(
+        ...,
+        description=(
+            "Deterministic per-row ID for idempotency. "
+            "Typically sha256(experiment_id|run_id|dwarf_function_id|model|prompt_template_id|temperature)."
+        ),
+    )
+    timestamp: str = Field(..., description="ISO-8601 timestamp")
+
+    # Function identity
+    test_case: str
+    opt: str
+    dwarf_function_id: str
+    ghidra_func_id: Optional[str] = None
+
+    # Model configuration
+    model: str = Field(..., description="OpenRouter model identifier")
+    prompt_template_id: str = Field(default="", description="Template name/version")
+    temperature: float = 0.0
+
+    # Prompt & response
+    prompt_text: str = Field(default="", description="Full prompt sent to the model")
+    response_text: str = Field(default="", description="Raw model response")
+
+    # Telemetry
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: int = 0
+
+    # Task-specific ground truth & prediction
+    ground_truth_name: Optional[str] = Field(default=None, description="DWARF function name")
+    predicted_name: Optional[str] = Field(default=None, description="LLM-predicted name")
+
+    # Freeform extras for experiment-specific data
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RunRecord(BaseModel):
+    """A benchmarking run — groups multiple jobs across models/repeats."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    run_id: str = Field(..., description="Unique run identifier")
+    experiment_id: str = Field(..., description="Experiment config ID")
+    status: str = Field(default="pending", description="pending | running | completed | failed")
+    models: List[str] = Field(default_factory=list, description="Models included in this run")
+    repeats: int = Field(default=1, description="Number of repeat iterations")
+    filters: Dict[str, Any] = Field(default_factory=dict, description="Data slice filters")
+    planned_jobs: int = Field(default=0, description="Expected number of result rows")
+    completed_jobs: int = Field(default=0, description="Completed result rows so far")
+    created_at: str = Field(default="", description="ISO-8601 creation timestamp")
+    updated_at: str = Field(default="", description="ISO-8601 last update timestamp")
+    errors: List[Dict[str, Any]] = Field(default_factory=list, description="Captured error records")
+
+
+class FunctionDataRow(BaseModel):
+    """A joined function record served by the /data API.
+
+    Combines identity from ``joined_functions.jsonl`` with the decompiled C
+    from ``ghidra_decompile/functions.jsonl``.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Identity
+    test_case: str
+    opt: str
+    variant: str = "stripped"
+    dwarf_function_id: str
+    dwarf_function_name: Optional[str] = None
+    dwarf_function_name_norm: Optional[str] = None
+
+    # Ghidra mapping
+    ghidra_func_id: Optional[str] = None
+    ghidra_entry_va: Optional[int] = None
+    ghidra_name: Optional[str] = None
+    ghidra_match_kind: Optional[str] = None
+
+    # Decompiled source (from ghidra_decompile/functions.jsonl)
+    c_raw: Optional[str] = Field(None, description="Ghidra decompiled C code")
+    decompile_status: Optional[str] = None
+
+    # Source declaration
+    decl_file: Optional[str] = None
+    decl_line: Optional[int] = None
+
+    # Quality
+    confidence_tier: Optional[str] = None
+    quality_weight: Optional[float] = None
+    is_high_confidence: Optional[bool] = None
+    eligible_for_gold: Optional[bool] = None
+
+    # Decompiler metrics
+    loc_decompiled: Optional[int] = None
+    cyclomatic: Optional[int] = None
+    bb_count: Optional[int] = None
