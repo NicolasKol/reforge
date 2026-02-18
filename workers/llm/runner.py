@@ -40,6 +40,14 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from workers.llm.prompt import load_template, render_prompt
+from workers.llm.response_parser import parse_topk_response
+from workers.llm.model_router import (
+    call_llm,
+    check_model_available,
+    get_profile,
+    detect_provider,
+    strip_thinking_tags,
+)
 
 log = logging.getLogger(__name__)
 
@@ -164,56 +172,13 @@ async def _fetch_report(
 
 
 # ─── OpenRouter call ─────────────────────────────────────────────────────────
-
-async def _call_openrouter(
-    client: httpx.AsyncClient,
-    openrouter_key: str,
-    model: str,
-    prompt_text: str,
-    temperature: float = 0.0,
-    max_tokens: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Call OpenRouter's chat/completions endpoint (OpenAI-compatible).
-
-    Returns
-    -------
-    dict
-        Keys: response_text, prompt_tokens, completion_tokens, total_tokens, latency_ms
-    """
-    headers = {
-        "Authorization": f"Bearer {openrouter_key}",
-        "Content-Type": "application/json",
-    }
-    body: Dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt_text}],
-        "temperature": temperature,
-    }
-    if max_tokens is not None:
-        body["max_tokens"] = max_tokens
-
-    t0 = time.perf_counter()
-    resp = await client.post(
-        f"{OPENROUTER_BASE}/chat/completions",
-        headers=headers,
-        json=body,
-        timeout=120.0,
-    )
-    latency_ms = int((time.perf_counter() - t0) * 1000)
-
-    resp.raise_for_status()
-    data = resp.json()
-
-    choice = data.get("choices", [{}])[0]
-    usage = data.get("usage", {})
-
-    return {
-        "response_text": choice.get("message", {}).get("content", "").strip(),
-        "prompt_tokens": usage.get("prompt_tokens", 0),
-        "completion_tokens": usage.get("completion_tokens", 0),
-        "total_tokens": usage.get("total_tokens", 0),
-        "latency_ms": latency_ms,
-    }
+# Now delegated to workers.llm.model_router.call_llm for model-aware routing.
+# The call_llm function automatically:
+#   - Detects the provider (OpenAI, Anthropic, DeepSeek, Google, etc.)
+#   - Adapts response_format based on model capabilities
+#   - Adds provider-specific headers (Anthropic beta, etc.)
+#   - Routes to compatible providers via require_parameters
+#   - Strips <think> tags from reasoning model output
 
 
 # ─── Core runner ──────────────────────────────────────────────────────────────
@@ -286,9 +251,11 @@ async def run_experiment(
         context_level = exp.get("context_level", "L0")
         limit = exp.get("limit", 0)
         test_case = exp.get("test_case") or None
+        top_k = exp.get("top_k", 1)
+        response_format = exp.get("response_format")
 
-        log.info("Config: model=%s, opt=%s, tier=%s, limit=%d, mode=%s, ctx=%s",
-                 model, opt, tier, limit, metadata_mode, context_level)
+        log.info("Config: model=%s, opt=%s, tier=%s, limit=%d, mode=%s, ctx=%s, top_k=%d",
+                 model, opt, tier, limit, metadata_mode, context_level, top_k)
 
         # 2. Load prompt template
         template = load_template(prompt_template_id)
@@ -337,8 +304,18 @@ async def run_experiment(
                 "dry_run": dry_run,
             }
 
+        # ── Pre-flight: check model availability & profile ─────────────────
+        profile = get_profile(model)
+        prov = detect_provider(model)
+        log.info("Model router: provider=%s, json_mode=%s, json_schema=%s, "
+                 "reasoning=%s, notes=%s",
+                 prov.value, profile.supports_json_mode,
+                 profile.supports_json_schema, profile.is_reasoning_model,
+                 profile.notes)
+
         if dry_run:
             # Build prompts to validate, but don't call LLM
+            # Skip availability check — no API key needed for dry runs
             for fn in todo[:3]:
                 prompt = render_prompt(
                     template,
@@ -360,6 +337,19 @@ async def run_experiment(
                 "errors": 0, "dry_run": True,
             }
 
+        # Availability check requires a valid API key — only for real runs
+        availability = await check_model_available(client, openrouter_key, model)
+        if not availability.get("available"):
+            err_msg = availability.get("error", "unknown")
+            log.error("Model %s is NOT available on OpenRouter: %s", model, err_msg)
+            raise RuntimeError(
+                f"Model '{model}' is not available on OpenRouter. "
+                f"Error: {err_msg}. "
+                f"Update the model in the experiment config."
+            )
+        log.info("Model %s is available (ctx_length=%s)",
+                 model, availability.get("context_length"))
+
         # 6. Process with concurrency limit
         sem = asyncio.Semaphore(concurrency)
         results: List[Dict[str, Any]] = []
@@ -380,16 +370,46 @@ async def run_experiment(
 
             async with sem:
                 try:
-                    llm_result = await _call_openrouter(
+                    llm_result = await call_llm(
                         client, openrouter_key, model,
-                        prompt_text, temperature, max_tokens,
+                        prompt_text,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        response_format=response_format,
                     )
                 except Exception as exc:
                     log.error("LLM call failed for %s: %s", func_id, exc)
                     errors.append({"dwarf_function_id": func_id, "error": str(exc)})
                     return
 
+            # Parse response (top-k or single-name)
+            response_text = llm_result["response_text"]
+            if top_k > 1:
+                parsed = parse_topk_response(response_text, k=top_k)
+                predicted_name = parsed.predictions[0]["name"] if parsed.predictions else ""
+                meta_predictions = parsed.predictions
+                meta_parse_ok = parsed.parse_ok
+                meta_parse_error = parsed.parse_error
+                all_candidate_names = [p["name"] for p in parsed.predictions]
+            else:
+                predicted_name = response_text
+                meta_predictions = None
+                meta_parse_ok = None
+                meta_parse_error = None
+                all_candidate_names = None
+
             # Assemble result row
+            row_metadata: Dict[str, Any] = {
+                "metadata_mode": metadata_mode,
+                "context_level": context_level,
+            }
+            if top_k > 1:
+                row_metadata["predictions"] = meta_predictions
+                row_metadata["parse_ok"] = meta_parse_ok
+                row_metadata["parse_error"] = meta_parse_error
+                row_metadata["all_candidate_names"] = all_candidate_names
+                row_metadata["top_k"] = top_k
+
             row = {
                 "experiment_id": experiment_id,
                 "run_id": run_id,
@@ -403,19 +423,16 @@ async def run_experiment(
                 "prompt_template_id": prompt_template_id,
                 "temperature": temperature,
                 "prompt_text": prompt_text,
-                "response_text": llm_result["response_text"],
+                "response_text": response_text,
                 "prompt_tokens": llm_result["prompt_tokens"],
                 "completion_tokens": llm_result["completion_tokens"],
                 "total_tokens": llm_result["total_tokens"],
                 "latency_ms": llm_result["latency_ms"],
-                # predicted_name = raw LLM response (scorer's input)
-                "predicted_name": llm_result["response_text"],
+                # predicted_name = top-1 from parsed response
+                "predicted_name": predicted_name,
                 # ground_truth_name left None — filled post-hoc by scorer
                 "ground_truth_name": None,
-                "metadata": {
-                    "metadata_mode": metadata_mode,
-                    "context_level": context_level,
-                },
+                "metadata": row_metadata,
             }
             results.append(row)
 

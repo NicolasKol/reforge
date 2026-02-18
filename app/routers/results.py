@@ -429,6 +429,161 @@ def _build_gt_lookup(
     return gt_map
 
 
+def _build_stable_key_lookup(
+    rows: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Build a stable-key lookup for cross-opt pairing.
+
+    Returns a map of ``dwarf_function_id → {stable_key, decl_file,
+    decl_line, decl_column, dwarf_function_name_norm, confidence_tier,
+    quality_weight, overlap_ratio, bb_count, cyclomatic, loc_decompiled}``.
+
+    The stable_key is ``test_case|decl_file|decl_line|decl_column|name_norm``
+    and is consistent across optimization levels (unlike ``dwarf_function_id``
+    which shifts ~86% between O0 and O1).
+    """
+    combos: Set[tuple] = set()
+    for r in rows:
+        tc = r.get("test_case")
+        opt = r.get("opt")
+        if tc and opt:
+            combos.add((tc, opt))
+
+    sk_map: Dict[str, Dict[str, Any]] = {}
+    for tc, opt in combos:
+        try:
+            funcs = load_functions_with_decompiled(
+                test_case=tc,
+                opt=opt,
+                variant="stripped",
+                artifacts_root=SYNTHETIC_ROOT,
+            )
+            for fn in funcs:
+                fid = fn.get("dwarf_function_id", "")
+                if not fid:
+                    continue
+
+                decl_file = fn.get("decl_file", "")
+                decl_line = fn.get("decl_line", "")
+                decl_column = fn.get("decl_column", "")
+                name = fn.get("dwarf_function_name", "")
+                name_norm = fn.get("dwarf_function_name_norm", name.lower() if name else "")
+
+                # Build stable key (matches metrics.py _add_merge_key logic)
+                if decl_file and decl_line:
+                    stable_key = f"{tc}|{decl_file}|{decl_line}|{decl_column}|{name_norm}"
+                else:
+                    # No declaration info → use sentinel (not stable across opts)
+                    stable_key = f"_unstable_{tc}_{opt}_{fid}"
+
+                sk_map[fid] = {
+                    "stable_key": stable_key,
+                    "decl_file": decl_file,
+                    "decl_line": decl_line,
+                    "decl_column": decl_column,
+                    "dwarf_function_name_norm": name_norm,
+                    "confidence_tier": fn.get("confidence_tier", ""),
+                    "quality_weight": fn.get("quality_weight"),
+                    "overlap_ratio": fn.get("overlap_ratio"),
+                    "bb_count": fn.get("bb_count"),
+                    "cyclomatic": fn.get("cyclomatic"),
+                    "loc_decompiled": fn.get("loc_decompiled"),
+                }
+        except Exception as exc:
+            log.warning(
+                "could not load stable keys for %s/%s: %s", tc, opt, exc,
+            )
+    return sk_map
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Repair endpoint — fix results where runner didn't parse top-k responses
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.post(
+    "/{experiment_id}/repair",
+    summary="Repair top-k results: parse response_text into predictions",
+)
+async def repair_results(experiment_id: str):
+    """One-time repair for experiments run before the top-k parser was deployed.
+
+    Problem: the old runner stored the raw JSON response as ``predicted_name``
+    instead of parsing it into top-1 name + predictions metadata.
+
+    Fix: re-parse ``response_text`` with parse_topk_response, update
+    ``predicted_name`` to the top-1 candidate, and store predictions in metadata.
+    Then overwrites ``results.jsonl`` with the repaired rows.
+    """
+    from workers.llm.response_parser import parse_topk_response
+
+    results_path = _results_path(experiment_id)
+    if not results_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No results found for experiment '{experiment_id}'",
+        )
+
+    rows = _read_results_jsonl(experiment_id)
+    if not rows:
+        return {"status": "ok", "experiment_id": experiment_id, "repaired": 0}
+
+    repaired_count = 0
+    for row in rows:
+        response_text = row.get("response_text", "")
+        predicted_name = row.get("predicted_name", "")
+
+        # Only repair rows where predicted_name looks like raw JSON
+        # (starts with { or contains "predictions")
+        needs_repair = (
+            predicted_name.lstrip().startswith("{")
+            or '"predictions"' in predicted_name
+        )
+        if not needs_repair:
+            continue
+
+        parsed = parse_topk_response(response_text or predicted_name, k=3)
+
+        # Update predicted_name to top-1 candidate
+        if parsed.predictions:
+            row["predicted_name"] = parsed.predictions[0]["name"]
+        else:
+            row["predicted_name"] = predicted_name  # leave as-is if parse fails
+
+        # Store predictions in metadata
+        metadata = row.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata["predictions"] = parsed.predictions
+        metadata["parse_ok"] = parsed.parse_ok
+        if parsed.parse_error:
+            metadata["parse_error"] = parsed.parse_error
+        metadata["all_candidate_names"] = [
+            p["name"] for p in parsed.predictions
+        ]
+        metadata["top_k"] = 3
+        row["metadata"] = metadata
+
+        repaired_count += 1
+
+    # Overwrite results.jsonl with repaired rows
+    with open(results_path, "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, default=str) + "\n")
+
+    # Clear job index so it gets rebuilt
+    with _job_lock:
+        _job_index.pop(experiment_id, None)
+
+    log.info("repaired %d/%d rows for %s", repaired_count, len(rows), experiment_id)
+    return {
+        "status": "ok",
+        "experiment_id": experiment_id,
+        "total_rows": len(rows),
+        "repaired": repaired_count,
+    }
+
+
 @router.post(
     "/{experiment_id}/score",
     summary="Score all results for an experiment",
@@ -464,6 +619,24 @@ async def score_results(experiment_id: str):
             if not row.get("ground_truth_name"):
                 fid = row.get("dwarf_function_id", "")
                 row["ground_truth_name"] = gt_map.get(fid, "")
+
+    # ── Stable key enrichment (for cross-opt pairing) ─────────────────
+    sk_map = _build_stable_key_lookup(rows)
+    for row in rows:
+        fid = row.get("dwarf_function_id", "")
+        sk_data = sk_map.get(fid)
+        if sk_data:
+            metadata = row.get("metadata", {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata["stable_key"] = sk_data["stable_key"]
+            metadata["confidence_tier"] = sk_data["confidence_tier"]
+            metadata["quality_weight"] = sk_data["quality_weight"]
+            metadata["overlap_ratio"] = sk_data["overlap_ratio"]
+            metadata["bb_count"] = sk_data["bb_count"]
+            metadata["cyclomatic"] = sk_data["cyclomatic"]
+            metadata["loc_decompiled"] = sk_data["loc_decompiled"]
+            row["metadata"] = metadata
 
     scored = score_experiment(rows)
 

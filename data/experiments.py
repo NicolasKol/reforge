@@ -79,6 +79,24 @@ class ExperimentConfig(BaseModel):
         ),
     )
 
+    # ── Top-K Configuration (v2.1) ────────────────────────────────────────
+    top_k: int = Field(
+        default=1,
+        ge=1,
+        le=10,
+        description=(
+            "Number of candidate names the LLM should return. "
+            "1 = single-name (legacy), 3 = top-k analyst shortlist."
+        ),
+    )
+    response_format: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "OpenRouter response_format parameter (e.g. {'type': 'json_object'}). "
+            "Set automatically when top_k > 1."
+        ),
+    )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Experiment Registry
@@ -227,20 +245,26 @@ def get_experiment(experiment_id: str) -> Optional[ExperimentConfig]:
 #
 
 # Canonical model catalog for the benchmark
+# NOTE: Model availability on OpenRouter changes over time.
+# Run `check_model_available()` or a dry-run before launching experiments.
 BENCHMARK_MODELS: Dict[str, str] = {
     # label → OpenRouter model ID
+    # ── OpenAI ────────────────────────────────────────────────────────────
     "gpt4o-mini":       "openai/gpt-4o-mini",
     "gpt4o":            "openai/gpt-4o",
-    "claude35sonnet":   "anthropic/claude-3.5-sonnet",
-    "llama31-70b":      "meta-llama/llama-3.1-70b-instruct",
-    "deepseek-coder2":  "deepseek/deepseek-coder-v2-0724",
     "gpt51":            "openai/gpt-5.1",
     "gpt51-codex-max":  "openai/gpt-5.1-codex-max",
+    # ── Anthropic ─────────────────────────────────────────────────────────
     "claude-opus46":    "anthropic/claude-opus-4.6",
     "claude-sonnet45":  "anthropic/claude-sonnet-4.5",
-    "gemini3-pro":      "google/gemini-3-pro-preview",
+    # ── DeepSeek (coder-v2 is DISCONTINUED — use v3+ models) ─────────────
+    "deepseek-v3":      "deepseek/deepseek-chat-v3-0324",
     "deepseek-v32":     "deepseek/deepseek-v3.2",
-    "deepseek-r1":      "deepseek/deepseek-r1",
+    "deepseek-r1":      "deepseek/deepseek-r1-0528",
+    # ── Google ────────────────────────────────────────────────────────────
+    "gemini3-pro":      "google/gemini-3-pro-preview",
+    # ── Meta / Open-source ────────────────────────────────────────────────
+    "llama31-70b":      "meta-llama/llama-3.1-70b-instruct",
     "qwen3-coder":      "qwen/qwen3-coder",
 }
 
@@ -248,11 +272,29 @@ BENCHMARK_TIERS = ["GOLD", "SILVER", "BRONZE"]
 BENCHMARK_OPTS = ["O0", "O1", "O2", "O3"]
 BENCHMARK_CONTEXT_LEVELS = ["L0", "L1", "L2"]
 
-# Map context level → prompt template
+# Map context level → prompt template (single-name)
 _CONTEXT_TEMPLATE: Dict[str, str] = {
     "L0": "function_naming_v2_L0",
     "L1": "function_naming_v2_L1",
     "L2": "function_naming_v2_L2",
+}
+
+# Map context level → prompt template (top-k JSON output)
+_CONTEXT_TEMPLATE_TOPK: Dict[str, str] = {
+    "L2": "function_naming_topk_L2",
+}
+
+# Thesis-specific model subset (instant, coding, thinking)
+# NOTE: deepseek-coder-v2-0724 was discontinued on OpenRouter.
+# Replaced with deepseek-chat-v3-0324 (V3 — strong coding, cheap).
+THESIS_MODELS: Dict[str, str] = {
+    "gpt4o-mini":    "openai/gpt-4o-mini",              
+    "deepseek-v3":   "deepseek/deepseek-chat-v3-0324",
+    "claude-sonnet45":  "anthropic/claude-sonnet-4.5", 
+    "llama31-70b":      "meta-llama/llama-3.1-70b-instruct",
+    "deepseek-r1":      "deepseek/deepseek-r1-0528",
+    "qwen3-coder":      "qwen/qwen3-coder",
+    "gpt51":         "openai/gpt-5.1",                 
 }
 
 
@@ -262,6 +304,7 @@ def build_benchmark_matrix(
     tiers: Optional[List[str]] = None,
     opts: Optional[List[str]] = None,
     context_levels: Optional[List[str]] = None,
+    top_k: int = 1,
     register: bool = True,
 ) -> List[ExperimentConfig]:
     """Generate the full experiment matrix for the benchmark.
@@ -300,9 +343,10 @@ def build_benchmark_matrix(
             for opt in opts:
                 for ctx in context_levels:
                     # Deterministic experiment ID
+                    topk_suffix = f"_topk{top_k}" if top_k > 1 else ""
                     exp_id = (
                         f"bench_{model_label}_{tier.lower()}"
-                        f"_{opt}_{ctx}"
+                        f"_{opt}_{ctx}{topk_suffix}"
                     )
 
                     # Skip if already registered (idempotent)
@@ -310,36 +354,73 @@ def build_benchmark_matrix(
                         configs.append(REGISTRY[exp_id])
                         continue
 
+                    # Select prompt template: top-k JSON vs single-name
+                    if top_k > 1 and ctx in _CONTEXT_TEMPLATE_TOPK:
+                        tmpl = _CONTEXT_TEMPLATE_TOPK[ctx]
+                        resp_fmt: Optional[Dict[str, Any]] = {"type": "json_object"}
+                    else:
+                        tmpl = _CONTEXT_TEMPLATE[ctx]
+                        resp_fmt = None
+
                     exp = ExperimentConfig(
                         id=exp_id,
                         name=(
                             f"Bench · {model_label} · {tier} · "
                             f"{opt} · {ctx}"
+                            + (f" · top{top_k}" if top_k > 1 else "")
                         ),
                         description=(
                             f"Benchmark: {model_label} on {tier}-tier "
                             f"at {opt}, context level {ctx}. "
-                            f"v2 prompt template, no function limit."
+                            + (f"Top-{top_k} JSON output. " if top_k > 1 else "")
+                            + f"v2 prompt template, no function limit."
                         ),
                         task="function_naming",
                         status=ExperimentStatus.READY,
                         tags=["benchmark-v2", f"ctx-{ctx}",
-                              f"tier-{tier.lower()}", f"opt-{opt}"],
+                              f"tier-{tier.lower()}", f"opt-{opt}"]
+                              + ([f"topk-{top_k}"] if top_k > 1 else []),
                         model=model_id,
                         temperature=0.0,
-                        prompt_template_id=_CONTEXT_TEMPLATE[ctx],
+                        prompt_template_id=tmpl,
                         tier=tier,
                         opt=opt,
                         test_case="",   # all test cases
                         limit=0,        # no limit
                         metadata_mode=MetadataMode.STRICT,
                         context_level=ctx,
+                        top_k=top_k,
+                        response_format=resp_fmt,
                     )
                     if register:
                         _register(exp)
                     configs.append(exp)
 
     return configs
+
+
+def build_thesis_matrix(
+    *,
+    register: bool = True,
+) -> List[ExperimentConfig]:
+    """Build the thesis-specific experiment matrix.
+
+    Fixed configuration:
+    - 3 models: gpt4o-mini (instant), deepseek-coder2 (coding), gpt51 (thinking)
+    - 3 tiers: GOLD, SILVER, BRONZE
+    - 4 opts: O0, O1, O2, O3
+    - Context: L2 only
+    - Top-k: 3 (JSON structured output)
+    - Total: 3 × 3 × 4 = 36 experiments
+    """
+    return build_benchmark_matrix(
+        models=THESIS_MODELS,
+        tiers=["GOLD", "SILVER", "BRONZE"],
+        opts=["O0", "O1", "O2", "O3"],
+        context_levels=["L2"],
+        top_k=3,
+        register=register,
+    )
 
 
 def estimate_benchmark_cost(
@@ -359,8 +440,8 @@ def estimate_benchmark_cost(
     Returns dict with total_calls, total_tokens, estimated_cost_usd, breakdown.
     """
     # Simplified pricing tiers (input $/M tokens)
-    CHEAP = {"gpt-4o-mini", "llama-3.1-70b", "deepseek-coder-v2",
-             "deepseek-v3.2", "deepseek-r1", "qwen3-coder"}
+    CHEAP = {"gpt-4o-mini", "llama-3.1-70b", "deepseek-chat-v3",
+             "deepseek-v3", "deepseek-r1", "qwen3-coder", "deepseek-chat"}
     MID = {"gpt-4o", "claude-3.5-sonnet", "claude-sonnet-4.5", "gemini-3-pro"}
     # PREMIUM = everything else
 
@@ -399,3 +480,9 @@ def estimate_benchmark_cost(
         "estimated_cost_usd": round(total_cost, 2),
         "breakdown": breakdown,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Auto-register thesis experiments at import time so they survive API restarts
+# ═══════════════════════════════════════════════════════════════════════════════
+build_thesis_matrix(register=True)

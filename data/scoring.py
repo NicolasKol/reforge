@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 log = logging.getLogger(__name__)
 
 # Bump on ANY change to tokenisation, normalisation, or metric logic.
-SCORER_VERSION = "1.0.0"
+SCORER_VERSION = "2.0.0"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -190,6 +190,13 @@ class ScoredRow(BaseModel):
     predicted_tokens: List[str]
     ground_truth_tokens: List[str]
 
+    # ── Top-k fields (populated when metadata.predictions exists) ─────
+    token_f1_topk: Optional[float] = None
+    exact_match_topk: Optional[bool] = None
+    best_candidate_index: Optional[int] = None
+    topk_uplift: Optional[float] = None  # token_f1_topk - token_f1
+    parse_ok: Optional[bool] = None
+
 
 def score_row(predicted: str, ground_truth: str) -> ScoredRow:
     """Score a single (predicted, ground_truth) name pair.
@@ -212,6 +219,63 @@ def score_row(predicted: str, ground_truth: str) -> ScoredRow:
     )
 
 
+def score_topk(
+    predictions: List[Dict[str, Any]],
+    ground_truth: str,
+) -> Dict[str, Any]:
+    """Score top-k predictions and return the best match.
+
+    Parameters
+    ----------
+    predictions : list[dict]
+        List of ``{"name": str, "confidence": float}`` candidates,
+        ordered by model confidence (descending).
+    ground_truth : str
+        Ground truth function name.
+
+    Returns
+    -------
+    dict
+        Keys: ``token_f1_topk``, ``exact_match_topk``,
+        ``best_candidate_index``, ``topk_uplift`` (vs top-1).
+    """
+    gt = ground_truth or ""
+    if not predictions:
+        return {
+            "token_f1_topk": 0.0,
+            "exact_match_topk": False,
+            "best_candidate_index": 0,
+            "topk_uplift": 0.0,
+        }
+
+    best_f1 = -1.0
+    best_idx = 0
+    any_exact = False
+    top1_f1 = 0.0
+
+    for i, pred in enumerate(predictions):
+        name = pred.get("name", "")
+        f1 = token_f1(name, gt)
+        em = exact_match_norm(name, gt)
+
+        if i == 0:
+            top1_f1 = f1
+
+        if f1 > best_f1:
+            best_f1 = f1
+            best_idx = i
+
+        if em:
+            any_exact = True
+
+    return {
+        "token_f1_topk": best_f1,
+        "exact_match_topk": any_exact,
+        "best_candidate_index": best_idx,
+        "topk_uplift": best_f1 - top1_f1,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Batch scoring
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -221,6 +285,9 @@ def score_experiment(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Score all result rows, adding score fields to each dict.
 
     Each row must have ``predicted_name`` and ``ground_truth_name``.
+    If a row has ``metadata.predictions`` (top-k), also computes
+    top-k metrics (best-of-k F1, exact match, uplift).
+
     Returns a **new** list — the original dicts are not mutated.
     """
     scored: List[Dict[str, Any]] = []
@@ -229,6 +296,25 @@ def score_experiment(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         gt = row.get("ground_truth_name") or ""
         s = score_row(pred, gt)
         enriched = {**row, **s.model_dump()}
+
+        # ── Top-k scoring (if predictions exist in metadata) ────────
+        metadata = row.get("metadata", {})
+        predictions = metadata.get("predictions") if isinstance(metadata, dict) else None
+        parse_ok = metadata.get("parse_ok") if isinstance(metadata, dict) else None
+
+        if predictions and isinstance(predictions, list) and len(predictions) > 1:
+            topk_scores = score_topk(predictions, gt)
+            enriched.update(topk_scores)
+            enriched["parse_ok"] = parse_ok
+        elif predictions and isinstance(predictions, list) and len(predictions) == 1:
+            # Single prediction → topk = top1
+            enriched["token_f1_topk"] = enriched["token_f1"]
+            enriched["exact_match_topk"] = enriched["exact_match_norm"]
+            enriched["best_candidate_index"] = 0
+            enriched["topk_uplift"] = 0.0
+            enriched["parse_ok"] = parse_ok
+        # else: no top-k fields (legacy single-name experiments)
+
         scored.append(enriched)
     return scored
 
