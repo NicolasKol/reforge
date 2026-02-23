@@ -19,8 +19,6 @@ The system is composed of domain-specific workers coordinated through a FastAPI 
 | **Data Module** (`data/`) | Evaluation schemas, scoring functions, and reproducible analysis notebooks |
 
 
-Infrastructure: PostgreSQL (provenance), Redis (job queue), n8n (orchestration).
-
 ## Quick Start
 
 ```bash
