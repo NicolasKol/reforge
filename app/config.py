@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     BUILDER_WORKSPACE: str = "/tmp/reforge_builds"
     ARTIFACTS_PATH: str = "/files/artifacts"
     
+    # LLM / OpenRouter
+    OPENROUTER_API_KEY: str | None = None
+    
     # Build Defaults
     DEFAULT_BUILD_TIMEOUT: int = 600  # seconds
     
