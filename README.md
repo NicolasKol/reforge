@@ -4,7 +4,7 @@ A modular pipeline for controlled reverse engineering experiments. Reforge compi
 
 ## Overview
 
-The system is composed of domain-specific workers coordinated through a FastAPI orchestration layer, with n8n providing workflow automation:
+The system is composed of domain-specific workers coordinated through a FastAPI orchestration layer:
 
 | Component | Role |
 |-----------|------|
