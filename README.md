@@ -21,7 +21,34 @@ The system is composed of domain-specific workers coordinated through a FastAPI 
 
 ## Quick Start
 
+### Local Development Setup
+
+Requires **Python 3.11+**.
+
 ```bash
+# Create and activate virtual environment
+python -m venv .venv
+
+# Linux / macOS
+source .venv/bin/activate
+
+# Windows (PowerShell)
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run tests
+python -m pytest data/tests/ workers/ -q
+```
+
+A pinned lockfile (`requirements-lock.txt`) is available for reproducible installs.
+
+### Docker (full pipeline)
+
+```bash
+cp docker/.env.example docker/.env   # edit with your credentials
 cd docker
 docker compose up -d
 curl http://localhost:8080/health

@@ -54,6 +54,7 @@ venv/
 env/
 .pytest_cache/
 *.egg-info/
+requirements-lock.txt
 
 # =============================================================================
 # IDE & Editor
