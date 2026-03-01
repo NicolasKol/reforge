@@ -45,6 +45,10 @@ python -m pytest data/tests/ workers/ -q
 
 A pinned lockfile (`requirements-lock.txt`) is available for reproducible installs.
 
+### Pre-built Data (no LLM calls needed)
+
+Download the [data-v1.0 release](https://github.com/YOUR_USER/reforge/releases/tag/data-v1.0), extract into `docker/local-files/`, and run the notebooks directly.
+
 ### Docker (full pipeline)
 
 ```bash
